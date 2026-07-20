@@ -570,10 +570,47 @@
     [1, 1, 0, 1],
     [1, 1, 1, 1]
   ];
+  /* Having found the topmost word, carry on to the morpheme above it.
+
+     The wave search deliberately prefers a reconstructed WORD over a bare root,
+     which is right for deciding where to branch. But it also meant the chain
+     stopped there: patriot ended at *ph₂tḗr while grammar showed *gerbʰ-, purely
+     because grammar had no word-level alternative. Same rule, opposite-looking
+     results, and no way for a reader to tell why. So climb the rest of the way. */
+  function extendUp(route) {
+    var seen = {};
+    for (var i = 0; i < route.length; i++) seen[route[i]] = 1;
+    for (var step = 0; step < 6; step++) {
+      var top = route[0], ps = UP[top] || [];
+      var best = -1, bn = -1;
+      for (var j = 0; j < ps.length; j++) {
+        var p = ps[j];
+        if (seen[p] || isAffix(p) || !isRecon(p)) continue;
+        /* Only ever step up to a bare root. Reconstructed forms also have
+           morphological parents -- *wódr̥ hangs off *r̥, the heteroclitic
+           r-stem ending, which has no meaning of its own and whose children are
+           simply every word ending in -r̥. Picking by reach chose that over
+           *wed- "to wet", the actual root. A trailing hyphen marks the real
+           thing, and it is the convention PIE roots are written in. */
+        if (!isBareRoot(p)) continue;
+        var n = reachCount(p);
+        if (n > bn) { bn = n; best = p; }
+      }
+      if (best < 0) break;
+      seen[best] = 1;
+      route.unshift(best);
+    }
+    return route;
+  }
+
   function climb(id) {
     for (var w = 0; w < WAVES.length; w++) {
       var got = passWith(id, WAVES[w], false);
-      if (got) return got;
+      if (got) {
+        got.route = extendUp(got.route);
+        got.root = got.route[0];
+        return got;
+      }
     }
     /* Some words reach nothing but a bare root: grammar's only reconstructed
        ancestor is *gerbʰ- "to carve". Refusing it leaves the chain stranded at
