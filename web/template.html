@@ -1679,6 +1679,7 @@
         ups.slice(0, 12).forEach(function (u) {
           var b = el("button", isRecon(u.id) ? "recon" : null);
           b.type = "button";
+          if (GLOSS[u.id]) b.title = GLOSS[u.id];
           b.appendChild(document.createTextNode(labelOf(u.id)));
           b.appendChild(el("span", "who", langName(u.id) +
             (u.kind === K_BOR ? " · borrowed" :
@@ -1929,7 +1930,10 @@
 
   /* ---- examples ------------------------------------------------------ */
   var KEYIDX = {};
-  for (var i = 0; i < N; i++) KEYIDX[keyOf(i)] = i;
+  for (var i = 0; i < N; i++) {
+    // homographs share a spelling; keep the first, which is etymology 1
+    if (KEYIDX[keyOf(i)] === undefined) KEYIDX[keyOf(i)] = i;
+  }
 
   var picker = document.getElementById("picker");
   ["en:father", "en:water", "en:night", "en:star", "en:wheel",
