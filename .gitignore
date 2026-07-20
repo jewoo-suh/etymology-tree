@@ -1,0 +1,16 @@
+# Source data and intermediates: all regenerable from the pipeline, and far too
+# large for a repository. `python build/extract.py` onward rebuilds everything.
+data/
+
+# Generated bundles. index.html is committed because GitHub Pages serves it;
+# the other two are built on demand.
+web/graph.json
+web/graph-web.json
+web/graph-full.json
+web/index-web.html
+web/index-full.html
+web/trees.json
+
+recon/*.json
+__pycache__/
+*.pyc

@@ -1,0 +1,1330 @@
+<title>Etymology Tree — prototype</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ECEFF4; --surface: #FFFFFF; --canvas: #F7F9FB; --sunk: #E3E8EF;
+    --line: #D3DBE4; --wire: #A9B8C7; --guide: #E8EDF2;
+    --ink: #131C25; --muted: #58687A; --faint: #8996A5;
+    --accent: #9A6B14; --accent-soft: #F5E7C8;
+    --fam-gem: #3F6E9E;  --fam-itc: #9E5241;  --fam-grk: #4C7D5A;
+    --fam-cel: #6A5C99;  --fam-bsl: #3D7C88;  --fam-iir: #8B5F88;
+    --fam-hyx: #7A6B3E;  --fam-ana: #5E6B7C;  --fam-toc: #916350;
+    --fam-urj: #4E7468;  --fam-oth: #6B7885;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+             Charter, Georgia, "Times New Roman", serif;
+    --sans:  ui-sans-serif, -apple-system, "Segoe UI Variable Text", "Segoe UI",
+             system-ui, "Helvetica Neue", sans-serif;
+    --mono:  ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+    --xs: .74rem;  --sm: .82rem;  --md: .93rem;  --lg: 1.15rem;  --xl: 1.6rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0C1219; --surface: #151E27; --canvas: #101822; --sunk: #0F1720;
+      --line: #263543; --wire: #435A6C; --guide: #1A242F;
+      --ink: #E4ECF4; --muted: #91A4B6; --faint: #6A7B8C;
+      --accent: #DCAC4C; --accent-soft: #3C3117;
+      --fam-gem: #74A5D4;  --fam-itc: #D48875;  --fam-grk: #80B48E;
+      --fam-cel: #A092CE;  --fam-bsl: #70B2BD;  --fam-iir: #C094BD;
+      --fam-hyx: #AFA073;  --fam-ana: #93A0B1;  --fam-toc: #C69885;
+      --fam-urj: #83A99D;  --fam-oth: #9FACB9;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ECEFF4; --surface: #FFFFFF; --canvas: #F7F9FB; --sunk: #E3E8EF;
+    --line: #D3DBE4; --wire: #A9B8C7; --guide: #E8EDF2;
+    --ink: #131C25; --muted: #58687A; --faint: #8996A5;
+    --accent: #9A6B14; --accent-soft: #F5E7C8;
+    --fam-gem: #3F6E9E;  --fam-itc: #9E5241;  --fam-grk: #4C7D5A;
+    --fam-cel: #6A5C99;  --fam-bsl: #3D7C88;  --fam-iir: #8B5F88;
+    --fam-hyx: #7A6B3E;  --fam-ana: #5E6B7C;  --fam-toc: #916350;
+    --fam-urj: #4E7468;  --fam-oth: #6B7885;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0C1219; --surface: #151E27; --canvas: #101822; --sunk: #0F1720;
+    --line: #263543; --wire: #435A6C; --guide: #1A242F;
+    --ink: #E4ECF4; --muted: #91A4B6; --faint: #6A7B8C;
+    --accent: #DCAC4C; --accent-soft: #3C3117;
+    --fam-gem: #74A5D4;  --fam-itc: #D48875;  --fam-grk: #80B48E;
+    --fam-cel: #A092CE;  --fam-bsl: #70B2BD;  --fam-iir: #C094BD;
+    --fam-hyx: #AFA073;  --fam-ana: #93A0B1;  --fam-toc: #C69885;
+    --fam-urj: #83A99D;  --fam-oth: #9FACB9;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: var(--md); line-height: 1.5;
+    -webkit-font-smoothing: antialiased; overflow: hidden;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  .app { height: 100%; display: grid; grid-template-rows: auto auto 1fr; min-height: 0; }
+
+  .top {
+    display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap;
+    padding: .7rem clamp(.9rem, 2.5vw, 1.6rem);
+    border-bottom: 1px solid var(--line); background: var(--surface);
+  }
+  h1 {
+    font-family: var(--serif); font-size: var(--xl); font-weight: 600;
+    margin: 0; letter-spacing: -.015em; line-height: 1; white-space: nowrap;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+  .credit { margin-left: auto; font-size: var(--xs); color: var(--faint); text-align: right; }
+  .credit a { color: var(--muted); }
+
+  .search { position: relative; flex: 1 1 24rem; max-width: 36rem; min-width: 14rem; }
+  .search input {
+    width: 100%; font-family: var(--serif); font-size: var(--lg); color: var(--ink);
+    background: var(--canvas); border: 1px solid var(--line); border-radius: 6px;
+    padding: .4rem .7rem .4rem 2rem;
+  }
+  .search input::placeholder { color: var(--faint); font-family: var(--sans); font-size: var(--md); }
+  .search input:focus { border-color: var(--accent); outline: none; }
+  .search .icon {
+    position: absolute; left: .65rem; top: 50%; transform: translateY(-50%);
+    color: var(--faint); pointer-events: none;
+  }
+  .results {
+    position: absolute; z-index: 20; top: calc(100% + .3rem); left: 0; right: 0;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    box-shadow: 0 12px 34px rgba(8, 18, 28, .18);
+    max-height: 62vh; overflow: auto; padding: .25rem;
+  }
+  .results:empty { display: none; }
+  .res {
+    display: flex; align-items: baseline; gap: .55rem; width: 100%;
+    padding: .3rem .5rem; border: 0; border-radius: 4px; background: transparent;
+    cursor: pointer; text-align: left; color: inherit;
+  }
+  .res:hover, .res.cur { background: var(--sunk); }
+  .res .w { font-family: var(--serif); font-size: var(--md); }
+  .res .w.recon { font-style: italic; }
+  .res .lg { font-size: var(--xs); color: var(--muted); white-space: nowrap; }
+  .res .gl {
+    font-size: var(--xs); color: var(--faint); margin-left: auto;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 44%;
+  }
+  .res .swatch { width: .45rem; height: .45rem; border-radius: 2px; background: var(--c); flex: none; }
+  .res .cnt {
+    font-family: var(--mono); font-size: var(--xs); color: var(--faint);
+    margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .res .gl + .cnt { margin-left: .6rem; }
+  .nores { padding: .5rem .6rem; font-size: var(--sm); color: var(--faint); }
+
+  .picker {
+    display: flex; flex-wrap: wrap; gap: .3rem; align-items: center;
+    padding: .5rem clamp(.9rem, 2.5vw, 1.6rem);
+    border-bottom: 1px solid var(--line); background: var(--surface);
+  }
+  .picker .lab {
+    font-family: var(--mono); font-size: var(--xs); letter-spacing: .1em;
+    text-transform: uppercase; color: var(--faint); margin-right: .3rem;
+  }
+  .chip {
+    font-family: var(--serif); font-size: var(--md); background: transparent;
+    color: var(--ink); border: 1px solid var(--line); border-radius: 999px;
+    padding: .14rem .66rem; cursor: pointer;
+    transition: border-color .14s, color .14s, background .14s;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent);
+    color: var(--surface); font-weight: 600;
+  }
+  .chip .code {
+    font-family: var(--mono); font-size: .7em; color: var(--faint);
+    margin-right: .28rem; text-transform: uppercase; letter-spacing: .06em;
+  }
+  .chip[aria-pressed="true"] .code { color: inherit; opacity: .8; }
+
+  .main { display: grid; grid-template-columns: minmax(0, 1fr) 20.5rem; min-height: 0; }
+  @media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+  .stage { display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0; }
+
+  .bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem;
+    padding: .42rem clamp(.9rem, 2.5vw, 1.6rem);
+    border-bottom: 1px solid var(--line); background: var(--surface);
+  }
+  .route { display: flex; align-items: baseline; flex-wrap: wrap; gap: .1rem; min-width: 0; }
+  .route .arrow { color: var(--faint); margin: 0 .18rem; font-size: .78em; }
+  .route .step {
+    font-family: var(--serif); font-size: var(--lg); line-height: 1.2;
+    background: transparent; border: 0; padding: .05rem .2rem; border-radius: 3px;
+    color: var(--ink); cursor: pointer;
+  }
+  .route .step:hover { background: var(--sunk); color: var(--accent); }
+  .route .step.recon { font-style: italic; }
+  .route .step.root { color: var(--accent); }
+  .route .step.you { font-weight: 600; color: var(--accent); }
+  .legend h3 {
+    font-family: var(--mono); font-size: var(--xs); font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--faint);
+    margin: 0 0 .1rem; width: 100%;
+  }
+  .legend .lkey { gap: .4rem; }
+  .legend .lkey svg { overflow: visible; }
+  .crumb {
+    font-size: var(--xs); color: var(--muted); background: var(--sunk);
+    border: 1px solid var(--line); border-radius: 4px; padding: .1rem .45rem; cursor: pointer;
+  }
+  .crumb:hover { border-color: var(--accent); color: var(--accent); }
+  .spacer { margin-left: auto; }
+  .controls { display: flex; gap: .28rem; }
+  .btn {
+    font-family: var(--sans); font-size: var(--xs); color: var(--muted);
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 4px; padding: .14rem .5rem; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn[aria-pressed="true"] { background: var(--sunk); color: var(--ink); border-color: var(--wire); }
+  .meta { font-family: var(--mono); font-size: var(--xs); color: var(--faint); font-variant-numeric: tabular-nums; }
+
+
+  .canvas { overflow: auto; min-height: 0; background: var(--canvas); }
+  svg { display: block; }
+  .guide { stroke: var(--guide); stroke-width: 1; }
+  .link { fill: none; stroke-linecap: round; }
+  .link.on { stroke: var(--accent) !important; }
+  /* one pattern per relation, named once in the legend */
+  .link.k0 { }                                  /* inherited  — solid        */
+  .link.k1 { stroke-dasharray: 4 3.5; }         /* borrowed   — dashed       */
+  .link.k2 { stroke-dasharray: 1 4; }           /* root       — dotted       */
+  .link.k3 { stroke-dasharray: 9 4; }           /* derived    — long dash    */
+  .dot { stroke-width: 1.4; }
+
+  /* Links have to cross the gap between columns, which is exactly where labels
+     sit. Painting a canvas-coloured stroke under each glyph keeps the word
+     readable wherever a branch runs behind it. */
+  .lbl, .sub, .more, .morerow {
+    paint-order: stroke fill;
+    stroke: var(--canvas); stroke-width: 3.5px; stroke-linejoin: round;
+  }
+  .lbl { font-family: var(--serif); font-size: 14px; fill: var(--ink); dominant-baseline: middle; }
+  .lbl.recon { font-style: italic; }
+  .lbl.on { fill: var(--accent); font-weight: 600; }
+  .lbl.you { font-size: 16.5px; }
+  .sub { font-family: var(--sans); font-size: 10.5px; fill: var(--faint); dominant-baseline: middle; }
+  .more { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); dominant-baseline: middle; }
+  .morerow {
+    font-family: var(--sans); font-size: 11.5px; fill: var(--muted);
+    dominant-baseline: middle; cursor: pointer;
+  }
+  .morerow:hover { fill: var(--accent); text-decoration: underline; }
+  .hit { fill: transparent; cursor: pointer; }
+  .halo { opacity: 0; fill: var(--accent-soft); }
+  .halo.sel { opacity: 1; }
+  .hit:hover ~ .halo { opacity: .5; }
+
+  .detail {
+    border-left: 1px solid var(--line); background: var(--surface);
+    overflow: auto; padding: 1rem 1.1rem 2rem; min-height: 0;
+  }
+  @media (max-width: 900px) { .detail { border-left: none; border-top: 1px solid var(--line); } }
+  .detail h2 {
+    font-family: var(--mono); font-size: var(--xs); font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 0 0 .8rem;
+  }
+  .placeholder { color: var(--faint); font-size: var(--sm); }
+  .d-form { font-family: var(--serif); font-size: 1.8rem; line-height: 1.15; margin: 0 0 .15rem; word-break: break-word; }
+  .d-form.recon { font-style: italic; }
+  .d-lang { color: var(--muted); font-size: var(--sm); }
+  .d-lang .swatch {
+    display: inline-block; width: .5rem; height: .5rem; border-radius: 2px;
+    background: var(--c); margin-right: .4rem;
+  }
+  .d-gloss {
+    margin: .8rem 0 0; padding: .55rem .7rem; background: var(--sunk);
+    border-radius: 4px; font-size: var(--sm); color: var(--ink);
+  }
+  .d-sec { margin-top: 1.2rem; }
+  .d-sec h3 {
+    font-family: var(--mono); font-size: var(--xs); font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--faint); margin: 0 0 .45rem;
+  }
+  .lineage { display: flex; flex-direction: column; gap: .1rem; }
+  .lineage button {
+    display: flex; align-items: baseline; gap: .45rem; width: 100%;
+    background: transparent; border: 0; padding: .18rem .3rem; border-radius: 3px;
+    cursor: pointer; text-align: left; color: inherit;
+    font-family: var(--serif); font-size: var(--md);
+  }
+  .lineage button:hover { background: var(--sunk); }
+  .lineage button .who { font-family: var(--sans); font-size: var(--xs); color: var(--faint); margin-left: auto; }
+  .lineage button.here { color: var(--accent); font-weight: 600; }
+  .lineage button.recon { font-style: italic; }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: .25rem .8rem; font-size: var(--sm); }
+  .facts dt { color: var(--faint); }
+  .facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .acts { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: 1rem; }
+  .acts .btn { padding: .28rem .6rem; font-size: var(--sm); }
+  .acts .primary { border-color: var(--accent); color: var(--accent); }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: .3rem .8rem; margin-top: 1.4rem;
+    padding-top: .9rem; border-top: 1px solid var(--line);
+    font-size: var(--xs); color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: .3rem; }
+  .legend i { width: .5rem; height: .5rem; border-radius: 2px; background: var(--c); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <div class="top">
+    <h1>Where words <em>branched</em></h1>
+    <div class="search">
+      <span class="icon" aria-hidden="true">⌕</span>
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Search a million words — accents optional" aria-label="Search words">
+      <div class="results" id="results" role="listbox"></div>
+    </div>
+    <span class="credit">
+      <a href="https://www.wiktionary.org/">Wiktionary</a> via
+      <a href="https://kaikki.org">kaikki.org</a> · CC BY-SA 3.0
+    </span>
+  </div>
+
+  <nav class="picker" id="picker" aria-label="Example words"><span class="lab">Try</span></nav>
+
+  <div class="main">
+    <div class="stage">
+      <div class="bar">
+        <div class="route" id="route"></div>
+        <div class="spacer"></div>
+        <div class="controls">
+          <button class="btn" type="button" id="mode" aria-pressed="false">Even tips</button>
+          <button class="btn" type="button" id="expand">Expand all</button>
+          <button class="btn" type="button" id="collapse">Fold</button>
+        </div>
+        <div class="meta" id="meta"></div>
+      </div>
+      <div class="canvas" id="canvas"><svg id="svg"></svg></div>
+    </div>
+    <aside class="detail" id="detail" aria-live="polite"></aside>
+  </div>
+</div>
+
+<script>/*__D3__*/</script>
+<script id="data" type="application/json">/*__GRAPH__*/</script>
+<script>
+(function () {
+  "use strict";
+  var G = JSON.parse(document.getElementById("data").textContent);
+  var SVGNS = "http://www.w3.org/2000/svg";
+
+  /* The payload ships as newline-joined blobs and base36 id lists rather than
+     JSON arrays: quotes, commas and six-digit decimals cost several megabytes
+     across 577k nodes when the whole graph travels inside one HTML file. */
+  function nums(s) {
+    if (!s) return [];
+    var parts = s.split(","), out = new Array(parts.length);
+    for (var i = 0; i < parts.length; i++) out[i] = parseInt(parts[i], 36);
+    return out;
+  }
+  var DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
+  /* Words are front-coded: each line is a shared-prefix length followed by the
+     tail. Sorted forms repeat long prefixes (gramer / gramere / grammer), so
+     this takes about a third off the largest blob in the payload. */
+  var WORDS = (function () {
+    var parts = G.words.split("\n"), out = new Array(parts.length), prev = "";
+    for (var i = 0; i < parts.length; i++) {
+      var s = parts[i];
+      var w = prev.slice(0, DIGITS.indexOf(s.charAt(0))) + s.slice(1);
+      out[i] = w;
+      prev = w;
+    }
+    return out;
+  })();
+  var CODES = G.codes, NAMES = G.names;
+  var N = WORDS.length;
+
+  /* Glosses are kept only for reconstructed forms. An attested word's meaning
+     is usually recoverable from its descendants; *ph₂tḗr's is not. */
+  var GLOSS = {};
+  (function () {
+    var ids = nums(G.gids), txt = G.gtexts ? G.gtexts.split("\n") : [];
+    for (var i = 0; i < ids.length; i++) GLOSS[ids[i]] = txt[i];
+  })();
+
+  /* Nodes sort by "code:word", so each language is one contiguous run and the
+     per-node language list ships as ~3.5k run lengths instead of 577k numbers. */
+  var WLANG = new Uint16Array(N);
+  (function () {
+    var pos = 0, runs = G.wrle.split(",");
+    for (var i = 0; i < runs.length; i++) {
+      var s = runs[i], c = s.indexOf(":");
+      var lang = parseInt(s.slice(0, c), 36), n = parseInt(s.slice(c + 1), 36);
+      for (var j = 0; j < n; j++) WLANG[pos++] = lang;
+    }
+  })();
+
+  /* Relations are not interchangeable, so each edge carries its kind: inherited
+     down the family line, borrowed across from another language, or a `root`
+     shortcut naming the far end of a chain rather than the next step. Two bits
+     per edge, packed, with kinds held parallel to the adjacency arrays so no
+     million-entry lookup map is needed. */
+  var K_INH = 0, K_BOR = 1, K_ROOT = 2, K_DER = 3;
+  var UP = new Array(N), DOWN = new Array(N);
+  var UPK = new Array(N), DOWNK = new Array(N);
+  (function () {
+    var bin = atob(G.kinds);
+    var flat = 0, runs = G.adj.split(";");
+    for (var i = 0; i < runs.length; i++) {
+      var s = runs[i], gt = s.indexOf(">");
+      var p = parseInt(s.slice(0, gt), 36);
+      var parts = s.slice(gt + 1).split(",");
+      var arr = new Array(parts.length), ka = new Array(parts.length);
+      for (var j = 0; j < parts.length; j++) {
+        var c = parseInt(parts[j], 36);
+        var k = (bin.charCodeAt(flat >> 2) >> ((flat & 3) * 2)) & 3;
+        arr[j] = c;
+        ka[j] = k;
+        (UP[c] || (UP[c] = [])).push(p);
+        (UPK[c] || (UPK[c] = [])).push(k);
+        flat++;
+      }
+      DOWN[p] = arr;
+      DOWNK[p] = ka;
+    }
+  })();
+  function kids(id) { return DOWN[id] || []; }
+  function parents(id) { return UP[id] || []; }
+  function kindOf(p, c) {
+    var a = DOWN[p], k = DOWNK[p];
+    if (!a) return K_INH;
+    for (var i = 0; i < a.length; i++) if (a[i] === c) return k[i];
+    return K_INH;
+  }
+
+  function code(id) { return CODES[WLANG[id]]; }
+  function langName(id) { return NAMES[WLANG[id]] || CODES[WLANG[id]]; }
+  function isRecon(id) { return code(id).indexOf("-pro") > -1; }
+  function isBareRoot(id) {
+    var w = WORDS[id];
+    return w.charAt(w.length - 1) === "-" || w.charAt(w.length - 1) === "−";
+  }
+  function labelOf(id) { return (isRecon(id) ? "*" : "") + WORDS[id]; }
+  function keyOf(id) { return code(id) + ":" + WORDS[id]; }
+
+  var FAMVAR = {
+    "gem-pro": "gem", "gmw-pro": "gem", "gmq-pro": "gem",
+    "itc-pro": "itc", "grk-pro": "grk", "cel-pro": "cel", "cel-bry-pro": "cel",
+    "sla-pro": "bsl", "ine-bsl-pro": "bsl", "bat-pro": "bsl",
+    "iir-pro": "iir", "inc-pro": "iir", "ira-pro": "iir",
+    "hyx-pro": "hyx", "ine-ana-pro": "ana", "ine-toc-pro": "toc",
+    "urj-pro": "urj", "urj-fin-pro": "urj", "smi-pro": "urj"
+  };
+  var FAMNAME = {
+    gem: "Germanic", itc: "Italic", grk: "Hellenic", cel: "Celtic",
+    bsl: "Balto-Slavic", iir: "Indo-Iranian", hyx: "Armenian",
+    ana: "Anatolian", toc: "Tocharian", urj: "Uralic", oth: "other"
+  };
+  var ERA = {
+    "ine-pro": "c. 4500 BCE", "iir-pro": "c. 2000 BCE", "itc-pro": "c. 1000 BCE",
+    "gem-pro": "c. 500 BCE", "cel-pro": "c. 800 BCE", "grk-pro": "c. 1600 BCE",
+    "sla-pro": "c. 500 CE", "ine-bsl-pro": "c. 1500 BCE", "gmw-pro": "c. 300 CE",
+    "urj-pro": "c. 3000 BCE",
+    "ang": "c. 900", "enm": "c. 1300", "goh": "c. 900", "gmh": "c. 1200",
+    "non": "c. 1000", "osx": "c. 900", "odt": "c. 1000", "dum": "c. 1300",
+    "gml": "c. 1300", "ofs": "c. 1200", "got": "c. 350", "la": "c. 100 BCE",
+    "grc": "c. 400 BCE", "sa": "c. 1200 BCE", "sga": "c. 800", "xcl": "c. 500"
+  };
+
+  var ROW = 22, PAD = 26, DOT = 3.4, GAP = 36, FANOUT = 18;
+  var DEPTH_CAP = 12, NODE_BUDGET = 5000;
+  var state = { q: null, tree: null, open: {}, all: {}, fam: {}, tidy: true, sel: null, focus: null };
+
+  function svgEl(t, a) {
+    var e = document.createElementNS(SVGNS, t);
+    for (var k in a) e.setAttribute(k, a[k]);
+    return e;
+  }
+  function el(tag, cls, txt) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt !== undefined && txt !== null) e.textContent = txt;
+    return e;
+  }
+
+  /* ---- ancestry ------------------------------------------------------ */
+  /* Breadth-first over the whole ancestor set rather than picking one parent
+     per generation: a chosen spelling variant with no recorded parent kills
+     the climb early, which is what once truncated 'mother' at Old English. */
+  /* A suffix is a component, not an origin. -ing has its own descent back to
+     Proto-Indo-European, so letting it act as a parent made every -ing word
+     claim that descent. Prefixes likewise. Reconstructed roots are also written
+     with a trailing hyphen (*gerbʰ-) and must stay, so the test is: a leading
+     hyphen is always an affix, a trailing one only outside proto-languages. */
+  function isAffix(id) {
+    var w = WORDS[id];
+    if (!w) return false;
+    var a = w.charAt(0), z = w.charAt(w.length - 1);
+    if (a === "-" || a === "−") return true;
+    return (z === "-" || z === "−") && !isRecon(id);
+  }
+
+  function ancestorsVia(id, allow) {
+    var parentOf = {}, depth = {}, q = [id], i = 0;
+    depth[id] = 0;
+    while (i < q.length) {
+      var cur = q[i++], ps = UP[cur] || [], ks = UPK[cur] || [];
+      for (var j = 0; j < ps.length; j++) {
+        if (!allow[ks[j]]) continue;
+        var p = ps[j];
+        if (isAffix(p)) continue;
+        if (depth[p] !== undefined) continue;
+        depth[p] = depth[cur] + 1;
+        parentOf[p] = cur;
+        q.push(p);
+      }
+    }
+    return { parentOf: parentOf, depth: depth };
+  }
+
+  /* Which candidate is genuinely the oldest?
+
+     Hop count does not answer this once shortcut edges exist. English father
+     reaches *ph₂tḗr in two hops (a Middle English page cites PIE directly) but
+     the derivational *fadrīnaz in three, so "furthest away" picked the wrong
+     branch entirely. Ask instead which candidate the others descend from: the
+     topmost is the one that is an ancestor of the most of its rivals. */
+  function topmost(cands, allow) {
+    if (cands.length < 2) return cands[0];
+    var score = {};
+    cands.forEach(function (c) { score[c] = 0; });
+    cands.forEach(function (b) {
+      var seen = {}, q = [b], i = 0;
+      seen[b] = 1;
+      while (i < q.length && q.length < 4000) {
+        var cur = q[i++], ps = UP[cur] || [], ks = UPK[cur] || [];
+        for (var j = 0; j < ps.length; j++) {
+          if (!allow[ks[j]]) continue;
+          var p = ps[j];
+          if (isAffix(p) || seen[p]) continue;
+          seen[p] = 1;
+          q.push(p);
+          if (score[p] !== undefined) score[p] += 1;
+        }
+      }
+    });
+    var best = cands[0];
+    cands.forEach(function (c) { if (score[c] > score[best]) best = c; });
+    return best;
+  }
+
+  /* Breadth-first search hands back the SHORTEST way down from the root, which
+     is the wrong one to show. Wiktionary pages routinely cite a distant ancestor
+     directly, so the quick route from *ph₂tḗr to father is two hops and silently
+     drops Old English, Proto-West Germanic and Proto-Germanic. Walk the longest
+     path through the ancestor set instead: every recorded stage earns its place. */
+  function longestRoute(root, id, allow, inSet) {
+    var memo = {}, onStack = {};
+    function best(cur) {
+      if (cur === id) return [id];
+      if (memo[cur] !== undefined) return memo[cur];
+      if (onStack[cur]) return null;          // cycle: ignore this way round
+      onStack[cur] = 1;
+      var ks = DOWN[cur] || [], kk = DOWNK[cur] || [], found = null;
+      for (var i = 0; i < ks.length; i++) {
+        var c = ks[i];
+        if (!allow[kk[i]] || inSet[c] === undefined) continue;
+        var sub = best(c);
+        if (sub && (!found || sub.length > found.length)) found = sub;
+      }
+      delete onStack[cur];
+      memo[cur] = found ? [cur].concat(found) : null;
+      return memo[cur];
+    }
+    return best(root);
+  }
+
+  function passWith(id, allow, allowBare) {
+    var r = ancestorsVia(id, allow);
+    var cands = [];
+    for (var k in r.depth) {
+      k = +k;
+      if (k !== id && isRecon(k) && (allowBare || !isBareRoot(k))) cands.push(k);
+    }
+    if (!cands.length) return null;
+    var root = topmost(cands, allow);
+    var route = longestRoute(root, id, allow, r.depth);
+    if (!route) {                            // fall back to the BFS route
+      route = [];
+      var cur = root;
+      while (cur !== id) { route.push(cur); cur = r.parentOf[cur]; }
+      route.push(id);
+    }
+    return { root: root, route: route };
+  }
+
+  /* Walk the relation kinds in order of how much they can be trusted to be a
+     single step: inheritance first, then borrowing, then the loose "derived
+     from", and only then the root shortcuts. The first wave that reaches a
+     reconstructed word wins, which keeps the full chain of attested stages
+     instead of leaping straight to the oldest thing on the page. */
+  var WAVES = [
+    [1, 0, 0, 0],
+    [1, 1, 0, 0],
+    [1, 1, 0, 1],
+    [1, 1, 1, 1]
+  ];
+  function climb(id) {
+    for (var w = 0; w < WAVES.length; w++) {
+      var got = passWith(id, WAVES[w], false);
+      if (got) return got;
+    }
+    /* Some words reach nothing but a bare root: grammar's only reconstructed
+       ancestor is *gerbʰ- "to carve". Refusing it leaves the chain stranded at
+       a Greek phrase, which is worse than showing the morpheme. Fanning still
+       declines to branch from it -- that rule is about breadth, not the chain. */
+    var bare = passWith(id, [1, 1, 1, 1], true);
+    if (bare) return bare;
+    // nothing reconstructed anywhere: fall back to the oldest attested form
+    var r = ancestorsVia(id, [1, 1, 1, 1]);
+    var best = -1, bd = -1;
+    for (var k in r.depth) {
+      k = +k;
+      if (k !== id && r.depth[k] > bd) { bd = r.depth[k]; best = k; }
+    }
+    if (best < 0) return null;
+    var route = [], cur = best;
+    while (cur !== id) { route.push(cur); cur = r.parentOf[cur]; }
+    route.push(id);
+    return { root: best, route: route };
+  }
+
+  /* Fan from the topmost real word, not the topmost root. *ph₂tḗr has 156
+     clean descendants; its own parent *peh₂- has 439 including 'bread' and
+     'fodder'. Roots are morphemes, and Wiktionary writes them with a trailing
+     hyphen, which is the detector. */
+  function bareParentOf(id) {
+    var ps = parents(id), best = -1, bn = -1;
+    for (var i = 0; i < ps.length; i++) {
+      if (!isBareRoot(ps[i])) continue;
+      var n = reachCount(ps[i]);
+      if (n > bn) { bn = n; best = ps[i]; }
+    }
+    return best < 0 ? null : { id: best, n: bn };
+  }
+
+  var reachMemo = {};
+  function reachCount(id) {
+    if (reachMemo[id] !== undefined) return reachMemo[id];
+    var seen = {}, q = [id], i = 0;
+    seen[id] = 1;
+    while (i < q.length && q.length < 20000) {
+      var ks = kids(q[i++]);
+      for (var j = 0; j < ks.length; j++) {
+        if (!seen[ks[j]]) { seen[ks[j]] = 1; q.push(ks[j]); }
+      }
+    }
+    return (reachMemo[id] = q.length - 1);
+  }
+
+  /* Reachable set below a node, bounded and cached. Used to spot shortcut edges.
+     `withRoot` decides whether `root` edges count as steps. They normally don't,
+     but when the reader deliberately branches from a bare root they must, or the
+     Latin and Greek stages hanging off it by root edges stay invisible. */
+  var reachCache = [{}, {}];
+  function reachSet(id, limit, withRoot) {
+    var cache = reachCache[withRoot ? 1 : 0];
+    if (cache[id]) return cache[id];
+    var seen = {}, q = [id], i = 0;
+    seen[id] = 1;
+    while (i < q.length && q.length < limit) {
+      var ks = DOWN[q[i]] || [], kk = DOWNK[q[i]] || [];
+      i++;
+      for (var j = 0; j < ks.length; j++) {
+        if (kk[j] === K_ROOT && !withRoot) continue;
+        var c = ks[j];
+        if (!seen[c]) { seen[c] = 1; q.push(c); }
+      }
+    }
+    cache[id] = seen;
+    return seen;
+  }
+
+  /* Transitive reduction of one node's children.
+
+     *ph₂tḗr has 52 direct children because Wiktionary pages routinely name PIE
+     themselves: German Vater, French père and Sanskrit पितृ all cite it, so the
+     graph holds an edge straight from the root to each of them alongside the
+     real chain through Proto-Germanic and Proto-Italic. Drawing both turns a
+     deep tree into a starburst. If a child is reachable from one of its own
+     siblings, the edge to it is a shortcut and the longer road already shows it. */
+  function directChildren(id, withRoot) {
+    var ks = kids(id), kk = DOWNK[id] || [];
+    var out = [];
+    for (var i = 0; i < ks.length; i++) {
+      if (isAffix(ks[i])) continue;
+      if (kk[i] !== K_ROOT || withRoot) out.push([ks[i], kk[i]]);
+    }
+    if (out.length < 3) return out;
+    var sets = out.map(function (e) { return reachSet(e[0], 2500, withRoot); });
+    var keep = [];
+    for (var a = 0; a < out.length; a++) {
+      var shadowed = false;
+      for (var b = 0; b < out.length && !shadowed; b++) {
+        if (a !== b && sets[b][out[a][0]]) shadowed = true;
+      }
+      if (!shadowed) keep.push(out[a]);
+    }
+    return keep.length ? keep : out;
+  }
+
+  function buildTree(rootId, route, withRoot) {
+    var budget = NODE_BUDGET, onStack = {};
+    function rec(id, depth, kind, parentOn) {
+      budget--;
+      var on = parentOn && depth < route.length && route[depth] === id;
+      var out = {
+        id: id, word: WORDS[id], code: code(id), lang: langName(id),
+        gloss: GLOSS[id] || "", path: on, kind: kind,
+        loan: kind === K_BOR, children: []
+      };
+      if (depth >= DEPTH_CAP) return out;
+      onStack[id] = 1;
+      var ch = directChildren(id, withRoot);
+      for (var i = 0; i < ch.length; i++) {
+        var c = ch[i][0];
+        if (onStack[c]) continue;
+        // never spend the last of the budget on anything but the query's line
+        var cOn = on && depth + 1 < route.length && route[depth + 1] === c;
+        if (budget <= 0 && !cOn) continue;
+        out.children.push(rec(c, depth + 1, ch[i][1], on));
+      }
+      delete onStack[id];
+      return out;
+    }
+    return rec(rootId, 0, K_INH, true);
+  }
+
+  /* Chain all the way to the root, but branch only from the topmost real word.
+
+     A bare root is a morpheme, and everything built from the same raw material
+     hangs off it regardless of how far the meaning has travelled: *gerbʰ- "to
+     scratch" carries grammar, orthography, grimoire, crayfish and German Krebs
+     side by side. Worse, the intermediate Latin and Greek forms attach to it by
+     `root` edges, which the tree excludes, so branching there produces a flat
+     fan of unrelated words with none of the structure between them.
+     Branch from Latin grammatica instead and the tree is the 50 European words
+     for grammar, with *gerbʰ- still named as the ultimate origin. */
+  function originsOf(id, skip) {
+    var out = [], ps = UP[id] || [], ks = UPK[id] || [];
+    for (var i = 0; i < ps.length; i++) {
+      if (ks[i] === K_ROOT || ps[i] === skip) continue;
+      out.push({ id: ps[i], kind: ks[i] });
+    }
+    out.sort(function (a, b) { return a.kind - b.kind; });
+    return out.slice(0, 6);
+  }
+
+  /* Branch from the top of the lineage, whatever it turns out to be.
+
+     Earlier this refused to branch from a bare root, on the grounds that a
+     morpheme gathers everything ever built from it however far the meaning has
+     drifted. True, but the cure was worse: grammar's tree began at Latin
+     grammatica with no indication that anything stood above it. Branch from the
+     root and say so with the tree itself. `root` edges have to count as steps
+     here, or the Latin and Greek stages that hang off the morpheme by exactly
+     those edges go missing and the fan looks flat and arbitrary. */
+  function treeFor(id, forceRoot) {
+    var top = forceRoot, route;
+    if (top === undefined || top === null) {
+      var c = climb(id);
+      if (!c) {
+        return { q: id, root: id, tree: buildTree(id, [id], true), chain: [id] };
+      }
+      route = c.route;
+      top = route[0];
+    } else {
+      var anc = ancestorsVia(id, [1, 1, 1, 1]);
+      route = longestRoute(top, id, [1, 1, 1, 1], anc.depth) || [top, id];
+    }
+    return { q: id, root: top, tree: buildTree(top, route, true), chain: route };
+  }
+
+  /* ---- search -------------------------------------------------------- */
+  /* Stored forms carry diacritics nobody types: ru:вода́ has a stress mark,
+     Latin has macrons, Greek has breathings. Fold them for matching. */
+  function fold(s) {
+    return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  }
+  var FOLDED = null;
+  function ensureFolded() {
+    if (FOLDED) return;
+    FOLDED = new Array(N);
+    for (var i = 0; i < N; i++) FOLDED[i] = fold(WORDS[i]);
+  }
+  function search(qs) {
+    var f = fold(qs.trim());
+    if (!f) return [];
+    ensureFolded();
+    var exact = [], starts = [], has = [];
+    for (var i = 0; i < N; i++) {
+      var w = FOLDED[i];
+      if (w === f) exact.push(i);
+      else if (starts.length + has.length < 400 && w.indexOf(f) === 0) starts.push(i);
+      else if (has.length < 200 && w.indexOf(f) > 0) has.push(i);
+      if (exact.length > 60) break;
+    }
+    /* Rank by prominence, not just by "has any children at all".
+       Searching sugar used to return the surname Sugar first -- borrowed from
+       German Zucker, so its chain looked German -- because both have children
+       and both are five letters, and the tie fell to whichever id came first.
+       The common noun has 24 children and 18 parents against the surname's one
+       each, so how connected a word is separates them properly. Case is the
+       first test: type it lowercase and you want the lowercase entry. */
+    var raw = qs.trim();
+    function weight(x) { return kids(x).length + parents(x).length; }
+    function rank(a, b) {
+      var ca = WORDS[a] === raw ? 0 : 1, cb = WORDS[b] === raw ? 0 : 1;
+      if (ca !== cb) return ca - cb;
+      var wa = weight(a), wb = weight(b);
+      if (wa !== wb) return wb - wa;
+      return WORDS[a].length - WORDS[b].length;
+    }
+    exact.sort(rank); starts.sort(rank); has.sort(rank);
+    return exact.concat(starts, has).slice(0, 45);
+  }
+
+  /* ---- view ---------------------------------------------------------- */
+  function isOpen(n) { return !!state.open[n.id] && n.children.length > 0; }
+  function shownChildren(n) {
+    var ks = n.children;
+    if (state.all[n.id] || ks.length <= FANOUT) return ks;
+    var on = [], rest = [];
+    ks.forEach(function (c) { (c.path ? on : rest).push(c); });
+    return on.concat(rest.slice(0, Math.max(1, FANOUT - on.length)));
+  }
+  function hiddenCount(n) { return n.children.length - shownChildren(n).length; }
+
+  function tagFamilies(root) {
+    state.fam = {};
+    root.children.forEach(function (b) {
+      var f = FAMVAR[b.code] || "oth", stack = [b];
+      while (stack.length) {
+        var n = stack.pop();
+        state.fam[n.id] = f;
+        for (var i = 0; i < n.children.length; i++) stack.push(n.children[i]);
+      }
+    });
+    state.fam[root.id] = "oth";
+  }
+  function famVar(n) { return state.fam[n.id] || "oth"; }
+  function famColour(n) { return "var(--fam-" + famVar(n) + ")"; }
+
+  function subtreeCount(n) {
+    var t = 0, stack = [n];
+    while (stack.length) {
+      var x = stack.pop();
+      t += x.children.length;
+      for (var i = 0; i < x.children.length; i++) stack.push(x.children[i]);
+    }
+    return t;
+  }
+  function findIn(root, id) {
+    var stack = [root];
+    while (stack.length) {
+      var n = stack.pop();
+      if (n.id === id) return n;
+      for (var i = 0; i < n.children.length; i++) stack.push(n.children[i]);
+    }
+    return null;
+  }
+  function viewRoot() {
+    if (state.focus !== null) {
+      var f = findIn(state.tree.tree, state.focus);
+      if (f) return f;
+    }
+    return state.tree.tree;
+  }
+  function defaultOpen(root) {
+    var open = {};
+    open[root.id] = true;
+    (function rec(n) {
+      var any = false;
+      n.children.forEach(function (c) { if (rec(c)) any = true; });
+      if (n.path || any) { open[n.id] = true; return true; }
+      return false;
+    })(root);
+    return open;
+  }
+
+  /* Label width has to follow the type actually used. The query is set larger
+     and the lineage is set bold, so measuring everything at the plain-text rate
+     made those labels run under their own language tag. */
+  function charW(n) {
+    if (state.tree && n.id === state.tree.q) return 9.2;
+    return n.path ? 8.2 : 7.7;
+  }
+
+  /* Counting JavaScript string length is not counting glyphs, and this tree is
+     full of scripts where the two diverge:
+       グラマー   4 units, but each kana is about twice as wide as a Latin letter
+       вода́      5 units, 4 glyphs — the stress mark hangs on the previous one
+       𐍆𐌰𐌳𐌰𐍂     10 units, 5 glyphs — Gothic sits outside the BMP
+     Measuring by unit count squeezed CJK labels under their language tag and
+     left gaps after accented ones. */
+  function textW(s, cw) {
+    var w = 0;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) { i++; w += cw; continue; }
+      if ((c >= 0x0300 && c <= 0x036F) || (c >= 0x1AB0 && c <= 0x1AFF) ||
+          (c >= 0x1DC0 && c <= 0x1DFF) || (c >= 0x20D0 && c <= 0x20FF) ||
+          (c >= 0xFE20 && c <= 0xFE2F) || c === 0x200D || c === 0xFE0F) continue;
+      if ((c >= 0x1100 && c <= 0x115F) || (c >= 0x2E80 && c <= 0x303E) ||
+          (c >= 0x3041 && c <= 0x33FF) || (c >= 0x3400 && c <= 0x4DBF) ||
+          (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0xA000 && c <= 0xA4CF) ||
+          (c >= 0xAC00 && c <= 0xD7A3) || (c >= 0xF900 && c <= 0xFAFF) ||
+          (c >= 0xFE30 && c <= 0xFE6F) || (c >= 0xFF00 && c <= 0xFF60) ||
+          (c >= 0xFFE0 && c <= 0xFFE6)) { w += cw * 1.9; continue; }
+      w += cw;
+    }
+    return w;
+  }
+  function labelW(n) { return textW(labelOf(n.id), charW(n)); }
+  function estWidth(n) {
+    return labelW(n) + textW(n.lang || n.code, 5.5) + 26 +
+           (n.children.length && !isOpen(n) ? 30 : 0);
+  }
+  function visibleHierarchy(root) {
+    return (function conv(n) {
+      var o = { n: n, more: 0 };
+      if (isOpen(n)) {
+        o.kids = shownChildren(n).map(conv);
+        var hid = hiddenCount(n);
+        if (hid > 0) o.kids.push({ n: n, more: hid });
+      }
+      return o;
+    })(root);
+  }
+
+  function render() {
+    var T = state.tree, root = viewRoot();
+    var h = d3.hierarchy(visibleHierarchy(root), function (x) { return x.kids; });
+    (state.tidy ? d3.tree() : d3.cluster()).nodeSize([ROW, 1])(h);
+
+    var all = h.descendants();
+    var minB = Infinity, maxB = -Infinity;
+    all.forEach(function (p) {
+      if (p.x < minB) minB = p.x;
+      if (p.x > maxB) maxB = p.x;
+    });
+
+    var maxw = {};
+    all.forEach(function (p) {
+      var w = p.data.more ? 118 : estWidth(p.data.n);
+      maxw[p.depth] = Math.max(maxw[p.depth] || 0, w);
+    });
+    var colX = {}, acc = PAD;
+    var depths = Object.keys(maxw).map(Number).sort(function (a, b) { return a - b; });
+    depths.forEach(function (dp) { colX[dp] = acc; acc += maxw[dp] + GAP; });
+
+    var width = acc + PAD, height = (maxB - minB) + PAD * 2;
+    all.forEach(function (p) { p.sy = p.x - minB + PAD; p.sx = colX[p.depth]; });
+
+    var svg = document.getElementById("svg");
+    svg.textContent = "";
+    svg.setAttribute("width", width);
+    svg.setAttribute("height", height);
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+
+    var gGuide = svgEl("g", {});
+    depths.forEach(function (dp) {
+      if (!dp) return;
+      gGuide.appendChild(svgEl("line", {
+        "class": "guide", x1: colX[dp] - GAP / 2, y1: 0, x2: colX[dp] - GAP / 2, y2: height
+      }));
+    });
+    svg.appendChild(gGuide);
+
+    /* Each link starts just past its own parent's label rather than at the dot,
+       so a branch never strikes through the word it comes from. Weight tracks
+       how much hangs off the branch, colour marks the family. */
+    var gLinks = svgEl("g", {}), gOn = svgEl("g", {});
+    all.forEach(function (p) {
+      if (!p.parent) return;
+      var a = p.parent, b = p;
+      var startX = a.sx + (a.data.more ? 0 : Math.min(estWidth(a.data.n) - 12, maxw[a.depth]));
+      if (startX >= b.sx - 6) startX = a.sx + 6;
+      var mid = startX + (b.sx - startX) * 0.5;
+      /* The relation used to be written on the line as the word "borrowed",
+         which collided with every neighbouring label once branches crowded.
+         The stroke pattern carries it instead, explained once in the legend. */
+      var kind = p.data.more ? K_INH : p.data.n.kind;
+      var on = !p.data.more && a.data.n.path && b.data.n.path;
+      var reach = p.data.more ? 0 : subtreeCount(p.data.n);
+      var wgt = Math.min(2.6, 0.85 + Math.log10(1 + reach) * 0.55);
+      (on ? gOn : gLinks).appendChild(svgEl("path", {
+        "class": "link" + (on ? " on" : "") + " k" + kind,
+        stroke: p.data.more ? "var(--wire)" : famColour(p.data.n),
+        "stroke-width": on ? Math.max(1.9, wgt) : wgt,
+        "stroke-opacity": on ? 1 : 0.45,
+        d: "M" + startX + "," + a.sy + "C" + mid + "," + a.sy +
+           " " + mid + "," + b.sy + " " + b.sx + "," + b.sy
+      }));
+    });
+    svg.appendChild(gLinks);
+    svg.appendChild(gOn);
+
+    var gNodes = svgEl("g", {});
+    all.forEach(function (p) {
+      if (p.data.more) {
+        var t = svgEl("text", { "class": "morerow", x: p.sx, y: p.sy });
+        t.textContent = "+ " + p.data.more + " more";
+        t.addEventListener("click", function () { state.all[p.data.n.id] = true; render(); });
+        gNodes.appendChild(t);
+        return;
+      }
+      var n = p.data.n, isYou = n.id === T.q, w = estWidth(n), selected = state.sel === n.id;
+
+      var hit = svgEl("rect", {
+        "class": "hit", x: p.sx - 8, y: p.sy - ROW / 2 + 2,
+        width: Math.max(40, w), height: ROW - 4
+      });
+      if (selected) hit.setAttribute("data-sel", "1");
+      hit.addEventListener("click", function () {
+        state.sel = n.id;
+        if (n.children.length) state.open[n.id] = !state.open[n.id];
+        render();
+      });
+      gNodes.appendChild(hit);
+      gNodes.appendChild(svgEl("rect", {
+        "class": "halo" + (selected ? " sel" : ""),
+        x: p.sx - 8, y: p.sy - ROW / 2 + 2,
+        width: Math.max(40, w), height: ROW - 4, rx: 3
+      }));
+
+      var reach = subtreeCount(n);
+      gNodes.appendChild(svgEl("circle", {
+        "class": "dot", cx: p.sx, cy: p.sy,
+        r: isYou ? DOT + 1.6 : Math.min(DOT + 2, DOT + Math.log10(1 + reach) * 0.7),
+        fill: n.children.length && !isOpen(n) ? famColour(n) : "var(--canvas)",
+        stroke: n.path ? "var(--accent)" : famColour(n)
+      }));
+
+      var lw = labelW(n);
+      var t2 = svgEl("text", {
+        "class": "lbl" + (isRecon(n.id) ? " recon" : "") + (n.path ? " on" : "") + (isYou ? " you" : ""),
+        x: p.sx + 9, y: p.sy
+      });
+      t2.textContent = labelOf(n.id);
+      gNodes.appendChild(t2);
+
+      var s = svgEl("text", { "class": "sub", x: p.sx + 17 + lw, y: p.sy + 0.5 });
+      s.textContent = n.lang || n.code;
+      gNodes.appendChild(s);
+
+      if (n.children.length && !isOpen(n)) {
+        var c = svgEl("text", {
+          "class": "more", x: p.sx + 24 + lw + textW(n.lang || n.code, 5.5), y: p.sy + 0.5
+        });
+        c.textContent = "+" + reach;
+        gNodes.appendChild(c);
+      }
+    });
+    svg.appendChild(gNodes);
+
+    /* Show the whole lineage, not just its two ends: the stages in between are
+       the interesting part, and each one is a word you can open in its own right. */
+    var route = document.getElementById("route");
+    route.textContent = "";
+    (T.chain || [T.q]).forEach(function (step, i) {
+      if (i) route.appendChild(el("span", "arrow", "→"));
+      var b = el("button", "step" + (i === 0 ? " root" : "") +
+                            (step === T.q ? " you" : "") +
+                            (isRecon(step) ? " recon" : ""));
+      b.type = "button";
+      b.title = langName(step);
+      b.textContent = labelOf(step);
+      b.addEventListener("click", function () { open(step); });
+      route.appendChild(b);
+    });
+    if (state.focus !== null) {
+      var back = el("button", "crumb", "↑ back to " + labelOf(T.tree.id));
+      back.type = "button";
+      back.addEventListener("click", function () {
+        state.focus = null;
+        state.open = defaultOpen(T.tree);
+        render();
+      });
+      route.appendChild(document.createTextNode(" "));
+      route.appendChild(back);
+    }
+
+    var langs = {};
+    (function count(n) { langs[n.code] = 1; n.children.forEach(count); })(T.tree);
+    document.getElementById("meta").textContent =
+      all.length.toLocaleString() + " shown · " + subtreeCount(T.tree).toLocaleString() +
+      " in tree · " + Object.keys(langs).length + " languages";
+
+    renderDetail(h);
+  }
+
+  function renderDetail(h) {
+    var box = document.getElementById("detail");
+    box.textContent = "";
+    box.appendChild(el("h2", null, "Node"));
+
+    var found = null;
+    h.descendants().forEach(function (p) {
+      if (!p.data.more && p.data.n.id === state.sel) found = p;
+    });
+
+    if (!found) {
+      box.appendChild(el("p", "placeholder",
+        "Click any node to inspect it — its meaning, its era, the line it descends " +
+        "through, and how much grew out of it. Every word here is also a valid " +
+        "starting point: search for it, or open its own tree."));
+    } else {
+      var n = found.data.n;
+      box.appendChild(el("div", "d-form" + (isRecon(n.id) ? " recon" : ""), labelOf(n.id)));
+      var lang = el("div", "d-lang");
+      var sw = el("span", "swatch");
+      sw.style.setProperty("--c", famColour(n));
+      lang.appendChild(sw);
+      lang.appendChild(document.createTextNode(
+        (n.lang || n.code) + (ERA[n.code] ? " · " + ERA[n.code] : "")));
+      box.appendChild(lang);
+      if (n.gloss) box.appendChild(el("div", "d-gloss", n.gloss));
+
+      var facts = el("div", "d-sec");
+      facts.appendChild(el("h3", null, "Reach"));
+      var dl = el("dl", "facts");
+      var arrived = n.kind === K_BOR ? "borrowing"
+        : n.kind === K_ROOT ? "a root citation"
+        : n.kind === K_DER ? "word-formation"
+        : "inheritance";
+      [["Direct children", kids(n.id).length],
+       ["All descendants", reachCount(n.id)],
+       ["Recorded parents", parents(n.id).length],
+       ["Family", FAMNAME[famVar(n)] || famVar(n)],
+       ["Arrived by", arrived]].forEach(function (r) {
+        dl.appendChild(el("dt", null, r[0]));
+        dl.appendChild(el("dd", null, String(r[1])));
+      });
+      facts.appendChild(dl);
+      box.appendChild(facts);
+
+      /* Anything drawn at the top of the tree still has recorded parents; not
+         showing them reads as "this word came from nowhere". */
+      var ups = [];
+      var pl = UP[n.id] || [], kl = UPK[n.id] || [];
+      for (var pi = 0; pi < pl.length; pi++) {
+        if (kl[pi] !== K_ROOT) ups.push({ id: pl[pi], kind: kl[pi] });
+      }
+      if (ups.length) {
+        var built = ups.filter(function (u) {
+          return u.kind === K_DER && code(u.id) === n.code;
+        }).length === ups.length;
+        var us = el("div", "d-sec");
+        us.appendChild(el("h3", null, built ? "Built from" : "Comes from"));
+        var uw = el("div", "lineage");
+        ups.slice(0, 12).forEach(function (u) {
+          var b = el("button", isRecon(u.id) ? "recon" : null);
+          b.type = "button";
+          b.appendChild(document.createTextNode(labelOf(u.id)));
+          b.appendChild(el("span", "who", langName(u.id) +
+            (u.kind === K_BOR ? " · borrowed" :
+             u.kind === K_DER && code(u.id) === n.code ? " · part" : "")));
+          b.addEventListener("click", function () { open(u.id); });
+          uw.appendChild(b);
+        });
+        us.appendChild(uw);
+        box.appendChild(us);
+      }
+
+      var lin = el("div", "d-sec");
+      lin.appendChild(el("h3", null, "Descends through"));
+      var wrap = el("div", "lineage");
+      found.ancestors().reverse().forEach(function (a) {
+        var an = a.data.n;
+        var b = el("button", (a === found ? "here " : "") + (isRecon(an.id) ? "recon" : ""));
+        b.type = "button";
+        b.appendChild(document.createTextNode(labelOf(an.id)));
+        b.appendChild(el("span", "who", an.lang || an.code));
+        b.addEventListener("click", function () { state.sel = an.id; render(); });
+        wrap.appendChild(b);
+      });
+      lin.appendChild(wrap);
+      box.appendChild(lin);
+
+      var acts = el("div", "acts");
+      if (n.children.length) {
+        var focus = el("button", "btn primary", "Focus on this branch");
+        focus.type = "button";
+        focus.addEventListener("click", function () {
+          state.focus = n.id;
+          state.open = {};
+          state.open[n.id] = true;
+          n.children.forEach(function (c) { state.open[c.id] = true; });
+          render();
+        });
+        acts.appendChild(focus);
+      }
+      if (n.id !== state.tree.q) {
+        var jump = el("button", "btn", "Trace this word");
+        jump.type = "button";
+        jump.addEventListener("click", function () { open(n.id); });
+        acts.appendChild(jump);
+      }
+      box.appendChild(acts);
+    }
+
+    var present = {}, kindsSeen = {};
+    h.descendants().forEach(function (p) {
+      if (p.data.more) return;
+      present[famVar(p.data.n)] = 1;
+      if (p.parent) kindsSeen[p.data.n.kind] = 1;
+    });
+
+    /* Slot 3 covers both "derived from another language" and "built from parts
+       of this one". They need no separate bit: word-formation is always
+       same-language, so the two language codes tell them apart. */
+    var anyForm = false, anyDer = false;
+    h.descendants().forEach(function (p) {
+      if (p.data.more || !p.parent || p.data.n.kind !== K_DER) return;
+      if (p.parent.data.more) return;
+      if (p.parent.data.n.code === p.data.n.code) anyForm = true; else anyDer = true;
+    });
+    var lines = el("div", "legend");
+    lines.appendChild(el("h3", null, "Lines"));
+    [[K_INH, "inherited"], [K_BOR, "borrowed"],
+     [K_DER, anyForm && !anyDer ? "built from" :
+             anyForm ? "derived / built from" : "derived from"],
+     [K_ROOT, "root"]].forEach(function (r) {
+      if (!kindsSeen[r[0]]) return;
+      var s2 = el("span", "lkey");
+      var svg = svgEl("svg", { width: 26, height: 8, viewBox: "0 0 26 8" });
+      svg.appendChild(svgEl("path", {
+        "class": "link k" + r[0], d: "M0,4H26",
+        stroke: "var(--wire)", "stroke-width": 1.6
+      }));
+      s2.appendChild(svg);
+      s2.appendChild(document.createTextNode(r[1]));
+      lines.appendChild(s2);
+    });
+    if (lines.childNodes.length > 1) box.appendChild(lines);
+
+    var leg = el("div", "legend");
+    leg.appendChild(el("h3", null, "Branches"));
+    Object.keys(present).forEach(function (f) {
+      var s2 = el("span");
+      var i = el("i");
+      i.style.setProperty("--c", "var(--fam-" + f + ")");
+      s2.appendChild(i);
+      s2.appendChild(document.createTextNode(FAMNAME[f] || f));
+      leg.appendChild(s2);
+    });
+    box.appendChild(leg);
+  }
+
+  function open(id, forceRoot) {
+    state.tree = treeFor(id, forceRoot);
+    state.focus = null;
+    state.sel = id;
+    tagFamilies(state.tree.tree);
+    state.open = defaultOpen(state.tree.tree);
+    state.all = {};
+    render();
+
+    Array.prototype.forEach.call(document.querySelectorAll(".chip"), function (c) {
+      c.setAttribute("aria-pressed", String(+c.dataset.id === id));
+    });
+    var hit = document.querySelector('[data-sel="1"]');
+    if (hit && hit.scrollIntoView) hit.scrollIntoView({ block: "center", inline: "center" });
+  }
+
+  /* ---- search UI ----------------------------------------------------- */
+  var qEl = document.getElementById("q"), resBox = document.getElementById("results");
+  var cur = -1, hits = [];
+
+  function paintResults() {
+    resBox.textContent = "";
+    if (!hits.length) {
+      if (qEl.value.trim()) resBox.appendChild(el("div", "nores", "No word matches that."));
+      return;
+    }
+    hits.forEach(function (id, i) {
+      var b = el("button", "res" + (i === cur ? " cur" : ""));
+      b.type = "button";
+      var sw = el("span", "swatch");
+      sw.style.setProperty("--c", "var(--fam-" + (FAMVAR[code(id)] || "oth") + ")");
+      b.appendChild(sw);
+      b.appendChild(el("span", "w" + (isRecon(id) ? " recon" : ""), labelOf(id)));
+      b.appendChild(el("span", "lg", langName(id)));
+      if (GLOSS[id]) b.appendChild(el("span", "gl", GLOSS[id]));
+      /* Two entries can be spelt the same in the same language -- sugar the
+         noun and Sugar the surname -- and without glosses they read alike.
+         Reach tells them apart: 24 descendants against one. */
+      var n = kids(id).length;
+      if (n) b.appendChild(el("span", "cnt", n + (n === 1 ? " descendant" : " descendants")));
+      b.addEventListener("click", function () {
+        open(id); resBox.textContent = ""; qEl.blur();
+      });
+      resBox.appendChild(b);
+    });
+  }
+  qEl.addEventListener("input", function () {
+    hits = search(qEl.value);
+    cur = hits.length ? 0 : -1;
+    paintResults();
+  });
+  qEl.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowDown") { cur = Math.min(cur + 1, hits.length - 1); paintResults(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { cur = Math.max(cur - 1, 0); paintResults(); e.preventDefault(); }
+    else if (e.key === "Enter" && hits[cur] !== undefined) {
+      open(hits[cur]); resBox.textContent = ""; qEl.blur();
+    } else if (e.key === "Escape") { resBox.textContent = ""; qEl.blur(); }
+  });
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest || !e.target.closest(".search")) resBox.textContent = "";
+  });
+
+  document.getElementById("mode").addEventListener("click", function () {
+    state.tidy = !state.tidy;
+    this.textContent = state.tidy ? "Even tips" : "Pack tight";
+    this.setAttribute("aria-pressed", String(!state.tidy));
+    render();
+  });
+  document.getElementById("expand").addEventListener("click", function () {
+    (function rec(n) {
+      if (n.children.length) { state.open[n.id] = true; state.all[n.id] = true; }
+      n.children.forEach(rec);
+    })(viewRoot());
+    render();
+  });
+  document.getElementById("collapse").addEventListener("click", function () {
+    state.open = {}; state.all = {};
+    state.open[viewRoot().id] = true;
+    render();
+  });
+
+  /* ---- examples ------------------------------------------------------ */
+  var KEYIDX = {};
+  for (var i = 0; i < N; i++) KEYIDX[keyOf(i)] = i;
+
+  var picker = document.getElementById("picker");
+  ["en:father", "en:water", "en:night", "en:star", "en:wheel",
+   "la:pater", "grc:πατήρ", "sa:पितृ", "ru:вода́", "hy:հայր",
+   "ga:athair", "is:hjarta", "cy:mam", "sq:natë"].forEach(function (k) {
+    var id = KEYIDX[k];
+    if (id === undefined) return;
+    var b = el("chip" === "" ? "span" : "button", "chip");
+    b.type = "button";
+    b.dataset.id = id;
+    b.setAttribute("aria-pressed", "false");
+    b.appendChild(el("span", "code", k.split(":")[0]));
+    b.appendChild(document.createTextNode(WORDS[id]));
+    b.title = langName(id);
+    b.addEventListener("click", function () { open(id); });
+    picker.appendChild(b);
+  });
+
+  open(KEYIDX["en:father"] !== undefined ? KEYIDX["en:father"] : 0);
+})();
+</script>
