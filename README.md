@@ -80,6 +80,23 @@ shortcut edges by transitive reduction.
 See [RECON-FINDINGS.md](RECON-FINDINGS.md) for how the data was assessed, and
 [PROJECT-BRIEF.md](PROJECT-BRIEF.md) for the original scope.
 
+## Verification
+
+`tools/qa.js` is the gold-standard gate: thirty words with steps their chains
+must contain and lexemes they must never touch, encoding every failure class
+found by auditing — wrong-lexeme bridges (star via "steer", day via dough,
+Korea via the cabbage), derivational padding (*tothen*, *nighten*), and
+sibling gluing (grammar via glamour). Run it against any build before shipping:
+
+```sh
+node tools/qa.js web/graph-web.json
+node tools/qa.js web/graph.json --allow-absent   # budget slices may lack words
+node tools/qa.js web/graph-full.json
+```
+
+A failed test is a blocked release. Found a wrong chain? Add it as a test
+first, then fix it.
+
 ## Known limits
 
 **Chains follow the pages, not the graph.** Every entry's first citation —
