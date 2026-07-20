@@ -204,6 +204,24 @@
     fill: none; stroke: var(--accent); stroke-width: 1.2;
     stroke-dasharray: 2 3; stroke-opacity: .75;
   }
+  /* the converging joins, and the word they arrive at */
+  .join {
+    fill: none; stroke: var(--accent); stroke-width: 2.6;
+    stroke-opacity: .95; stroke-linecap: round;
+  }
+  .wordplate {
+    fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4;
+  }
+  .wordknot { fill: var(--accent); stroke: var(--accent); stroke-width: 2; }
+  .wordlabel {
+    font-family: var(--serif); font-size: 21px; font-weight: 600;
+    fill: var(--accent); dominant-baseline: middle;
+    paint-order: stroke fill; stroke: var(--canvas); stroke-width: 3px;
+    stroke-linejoin: round;
+  }
+  .wordsub {
+    font-size: 10.5px; fill: var(--muted); dominant-baseline: middle;
+  }
   .lbl.ghost {
     font-size: 12.5px; fill: var(--accent); fill-opacity: .9; cursor: pointer;
   }
@@ -1110,6 +1128,13 @@
       var route = c ? c.route : [cid];
       var root = route[0];
       var tree = buildTree(root, route, true, -1);
+      /* Every part's tree contains the word itself -- Baby descends to
+         Antibabypille, and so do Pille and anti- -- so it was drawn once per
+         band as well as at the join. It belongs at the join only. */
+      (function prune(n) {
+        n.children = n.children.filter(function (ch) { return ch.id !== qid; });
+        n.children.forEach(prune);
+      })(tree);
       var drawn = pathInTree(tree, cid, (function () {
         var w = {};
         route.forEach(function (x) { w[x] = 1; });
@@ -1180,23 +1205,27 @@
       var ay = b.dy + PAD + b.anchor.sy;
       var mx = (ax + wordX) / 2;
       stage.appendChild(svgEl("path", {
-        "class": "merge", "stroke-width": 1.8, "stroke-opacity": .95,
-        "stroke-dasharray": "none",
+        "class": "join",
         d: "M" + ax + "," + ay + "C" + mx + "," + ay + " " + mx + "," + midY +
-           " " + (wordX - 4) + "," + midY
+           " " + (wordX - 6) + "," + midY
       }));
     });
 
+    // the word is what all of this arrives at, so it is drawn to be found
     var gW = svgEl("g", {});
-    gW.appendChild(svgEl("circle", {
-      "class": "dot", cx: wordX, cy: midY, r: DOT + 1.8,
-      fill: "var(--accent)", stroke: "var(--accent)"
+    var qw = textW(labelOf(qid), 11.4);
+    gW.appendChild(svgEl("rect", {
+      "class": "wordplate",
+      x: wordX - 12, y: midY - 17, width: qw + 34, height: 34, rx: 6
     }));
-    var qt = svgEl("text", { "class": "lbl you on", x: wordX + 11, y: midY });
+    gW.appendChild(svgEl("circle", {
+      "class": "dot wordknot", cx: wordX, cy: midY, r: 5.5
+    }));
+    var qt = svgEl("text", { "class": "wordlabel", x: wordX + 14, y: midY });
     qt.textContent = labelOf(qid);
     gW.appendChild(qt);
     var qs = svgEl("text", {
-      "class": "sub", x: wordX + 18 + textW(labelOf(qid), 9.2), y: midY + 0.5
+      "class": "sub wordsub", x: wordX + 14, y: midY + 21
     });
     qs.textContent = langName(qid);
     gW.appendChild(qs);
