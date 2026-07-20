@@ -474,7 +474,7 @@
   var DEPTH_CAP = 12, NODE_BUDGET = 5000;
   var state = { q: null, tree: null, open: {}, all: {}, fam: {},
                tidy: true, sel: null, focus: null, zoom: 1, mode: 'tree',
-               bandOpen: {} };
+               bandOpen: {}, fit: true };
 
   function svgEl(t, a) {
     var e = document.createElementNS(SVGNS, t);
@@ -1184,11 +1184,13 @@
 
     bands.forEach(function (b) { b.dx = joinX - (b.anchor.sx + estWidth(b.anchor.data.n)); });
 
-    var wordX = joinX + GAP * 2.2;
+    var wordX = joinX + GAP * 4.5;   // room for the joins to read as arrivals
     var width = wordX + estWidth({ id: qid, word: WORDS[qid], code: code(qid),
                                    lang: langName(qid), children: [] }) + PAD * 2;
     var height = totalH + PAD * 2;
     var midY = PAD + (totalH - ROW * 1.6) / 2;
+    if (state.fit) { state.zoom = fitZoom(width, height); state.fit = false; }
+    z = state.zoom;
 
     svg.setAttribute("width", Math.round(width * z));
     svg.setAttribute("height", Math.round(height * z));
@@ -1245,6 +1247,13 @@
     });
     route.appendChild(el("span", "arrow", "→"));
     route.appendChild(el("span", "step you", labelOf(qid)));
+
+    if (state.scrollTo) {
+      var cv = document.getElementById("canvas");
+      cv.scrollLeft = Math.max(0, wordX * z - cv.clientWidth * 0.62);
+      cv.scrollTop = Math.max(0, midY * z - cv.clientHeight * 0.5);
+      state.scrollTo = false;
+    }
 
     var shown = bands.reduce(function (s, b) { return s + b.all.length; }, 0);
     document.getElementById("meta").textContent =
@@ -1377,6 +1386,7 @@
     depths.forEach(function (dp) { colX[dp] = acc; acc += maxw[dp] + GAP; });
 
     var width = acc + PAD, height = (maxB - minB) + PAD * 2;
+    if (state.fit) { state.zoom = fitZoom(width, height); state.fit = false; }
     all.forEach(function (p) {
       p.sy = p.x - minB + PAD;
       p.sx = colX[p.data.ghost === undefined ? p.depth : ghostDepth(p)];
@@ -1585,6 +1595,17 @@
       route.appendChild(back);
     }
 
+    if (state.scrollTo) {
+      var you = null;
+      all.forEach(function (p) { if (!p.data.more && p.data.n.id === T.q) you = p; });
+      if (you) {
+        var cv2 = document.getElementById("canvas");
+        cv2.scrollLeft = Math.max(0, you.sx * z - cv2.clientWidth * 0.55);
+        cv2.scrollTop = Math.max(0, you.sy * z - cv2.clientHeight * 0.45);
+      }
+      state.scrollTo = false;
+    }
+
     var langs = {};
     (function count(n) { langs[n.code] = 1; n.children.forEach(count); })(T.tree);
     document.getElementById("meta").textContent =
@@ -1766,13 +1787,14 @@
     state.open = defaultOpen(state.tree.tree);
     state.all = {};
     state.bandOpen = {};
+    state.fit = true;          // a new word is sized to be read, not inherited
+    state.scrollTo = true;     // and brought into view rather than left off-screen
     render();
 
     Array.prototype.forEach.call(document.querySelectorAll(".chip"), function (c) {
       c.setAttribute("aria-pressed", String(+c.dataset.id === id));
     });
-    var hit = document.querySelector('[data-sel="1"]');
-    if (hit && hit.scrollIntoView) hit.scrollIntoView({ block: "center", inline: "center" });
+    // scrolling is handled by render, which knows where the word ended up
   }
 
   /* ---- search UI ----------------------------------------------------- */
@@ -1821,6 +1843,24 @@
     if (!e.target.closest || !e.target.closest(".search")) resBox.textContent = "";
   });
 
+  /* Fit on open, so a word arrives at a size you can read.
+
+     Width is what decides it: a tree can be thousands of pixels tall and
+     scrolling down it is normal, but scrolling sideways to find the word you
+     searched for is not. Floored so a sprawling tree never shrinks to
+     illegibility, capped so a two-word etymology is not blown up absurdly. */
+  function fitZoom(width, height) {
+    var cv = document.getElementById("canvas");
+    var w = cv.clientWidth || 900;
+    var z = (w - 28) / Math.max(1, width);
+    /* Floored where the type is still readable rather than where the drawing
+       happens to fit. Squeezing Antibabypille into the window took the labels
+       down to 7px, which shows you everything and tells you nothing; a wide
+       tree is better scrolled than shrunk, so the view scrolls to the word
+       instead. */
+    return Math.max(0.78, Math.min(1.6, z));
+  }
+
   function setZoom(z, anchor) {
     var canvas = document.getElementById("canvas");
     var prev = state.zoom;
@@ -1836,7 +1876,11 @@
   }
   document.getElementById("zoomin").addEventListener("click", function () { setZoom(state.zoom * 1.25); });
   document.getElementById("zoomout").addEventListener("click", function () { setZoom(state.zoom / 1.25); });
-  document.getElementById("zoomfit").addEventListener("click", function () { setZoom(1); });
+  document.getElementById("zoomfit").addEventListener("click", function () {
+    state.fit = true;
+    state.scrollTo = true;
+    render();
+  });
   document.getElementById("canvas").addEventListener("wheel", function (e) {
     if (!e.ctrlKey && !e.metaKey) return;      // plain wheel still scrolls
     e.preventDefault();
