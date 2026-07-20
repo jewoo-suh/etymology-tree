@@ -313,6 +313,7 @@
           <button class="btn" type="button" id="zoomout" title="Zoom out">&minus;</button>
           <button class="btn" type="button" id="zoomin" title="Zoom in">+</button>
           <button class="btn" type="button" id="zoomfit" title="Reset zoom">Fit</button>
+          <button class="btn" type="button" id="view" aria-pressed="false">Descent</button>
           <button class="btn" type="button" id="mode" aria-pressed="false">Even tips</button>
           <button class="btn" type="button" id="expand">Expand all</button>
           <button class="btn" type="button" id="collapse">Fold</button>
@@ -454,7 +455,7 @@
   var ROW = 22, PAD = 26, DOT = 3.4, GAP = 36, FANOUT = 18;
   var DEPTH_CAP = 12, NODE_BUDGET = 5000;
   var state = { q: null, tree: null, open: {}, all: {}, fam: {},
-               tidy: true, sel: null, focus: null, zoom: 1 };
+               tidy: true, sel: null, focus: null, zoom: 1, mode: 'tree' };
 
   function svgEl(t, a) {
     var e = document.createElementNS(SVGNS, t);
@@ -870,7 +871,8 @@
       drawn.forEach(function (nd) { nd.path = true; });
       route = drawn.map(function (nd) { return nd.id; });
     }
-    return { q: id, root: top, tree: tree, chain: route };
+    return { q: id, root: top, tree: tree, chain: route,
+             formation: formationOf(id) };
   }
 
   /* A word can sit in several places in a flattened DAG, so take the occurrence
@@ -1072,7 +1074,140 @@
     })(root);
   }
 
+  /* How a word was made, rather than what came of it.
+
+     A tree has one parent per node, so teacher could only ever hang under teach
+     with -er noted at the side -- which says the two were not equals, and they
+     were. Here each parent gets the same treatment: its own chain, its own band,
+     the same weight, converging on the word. teach arrives from above, -er from
+     below, and they meet. */
+  function formationOf(id) {
+    var ps = UP[id] || [], ks = UPK[id] || [], comps = [];
+    for (var i = 0; i < ps.length && comps.length < 4; i++) {
+      if (ks[i] !== K_DER || code(ps[i]) !== code(id)) continue;
+      comps.push(componentChain(ps[i]));
+    }
+    return comps.length >= 2 ? comps : null;
+  }
+
+  function renderFormation() {
+    var T = state.tree, qid = T.q, comps = T.formation;
+    var svg = document.getElementById("svg");
+    svg.textContent = "";
+    var z = state.zoom, stage = svgEl("g", {});
+
+    var L = 0;
+    comps.forEach(function (c) { L = Math.max(L, c.length); });
+
+    // columns wide enough for the widest label standing in each
+    var colw = [];
+    for (var d = 0; d <= L; d++) colw[d] = 60;
+    comps.forEach(function (c) {
+      c.forEach(function (nid, i) {
+        var d = L - c.length + i;
+        colw[d] = Math.max(colw[d], textW(labelOf(nid), 7.7) +
+                           textW(langName(nid), 5.5) + 34);
+      });
+    });
+    colw[L] = Math.max(colw[L], textW(labelOf(qid), 9.2) +
+                       textW(langName(qid), 5.5) + 40);
+    var colX = [], acc = PAD;
+    for (d = 0; d <= L; d++) { colX[d] = acc; acc += colw[d] + GAP; }
+    var width = acc + PAD;
+
+    var BAND = ROW * 2.2;
+    var height = comps.length * BAND + PAD * 2;
+    var midY = PAD + (comps.length * BAND) / 2 - BAND / 2;
+
+    svg.setAttribute("width", Math.round(width * z));
+    svg.setAttribute("height", Math.round(height * z));
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+
+    var gL = svgEl("g", {}), gN = svgEl("g", {});
+    comps.forEach(function (chain, ci) {
+      var y = PAD + ci * BAND;
+      var fam = "var(--fam-" + (FAMVAR[code(chain[0])] || "oth") + ")";
+      chain.forEach(function (nid, i) {
+        var d = L - chain.length + i, x = colX[d];
+        if (i) {
+          var px = colX[d - 1] + Math.min(colw[d - 1],
+            textW(labelOf(chain[i - 1]), 7.7) + 14);
+          gL.appendChild(svgEl("path", {
+            "class": "link k0", stroke: fam, "stroke-width": 1.6,
+            "stroke-opacity": .75,
+            d: "M" + px + "," + y + "H" + (x - 4)
+          }));
+        }
+        gN.appendChild(svgEl("circle", {
+          "class": "dot", cx: x, cy: y, r: DOT,
+          fill: "var(--canvas)", stroke: fam
+        }));
+        var t = svgEl("text", {
+          "class": "lbl" + (isRecon(nid) ? " recon" : ""), x: x + 9, y: y
+        });
+        t.textContent = labelOf(nid);
+        t.addEventListener("click", function () { open(nid); });
+        t.style.cursor = "pointer";
+        gN.appendChild(t);
+        var sub = svgEl("text", {
+          "class": "sub", x: x + 16 + textW(labelOf(nid), 7.7), y: y + 0.5
+        });
+        sub.textContent = isAffix(nid) ? "affix" : langName(nid);
+        gN.appendChild(sub);
+      });
+
+      // the branch turns and joins the word
+      var lastX = colX[L - 1] + Math.min(colw[L - 1],
+        textW(labelOf(chain[chain.length - 1]), 7.7) + 14);
+      var mx = (lastX + colX[L]) / 2;
+      gL.appendChild(svgEl("path", {
+        "class": "merge", stroke: fam, "stroke-opacity": .9, "stroke-width": 1.7,
+        "stroke-dasharray": "none",
+        d: "M" + lastX + "," + y + "C" + mx + "," + y + " " + mx + "," + midY +
+           " " + (colX[L] - 4) + "," + midY
+      }));
+    });
+
+    gN.appendChild(svgEl("circle", {
+      "class": "dot", cx: colX[L], cy: midY, r: DOT + 1.8,
+      fill: "var(--accent)", stroke: "var(--accent)"
+    }));
+    var qt = svgEl("text", { "class": "lbl you on", x: colX[L] + 11, y: midY });
+    qt.textContent = labelOf(qid);
+    gN.appendChild(qt);
+    var qs = svgEl("text", {
+      "class": "sub", x: colX[L] + 18 + textW(labelOf(qid), 9.2), y: midY + 0.5
+    });
+    qs.textContent = langName(qid);
+    gN.appendChild(qs);
+
+    stage.appendChild(gL);
+    stage.appendChild(gN);
+    svg.appendChild(stage);
+
+    var route = document.getElementById("route");
+    route.textContent = "";
+    comps.forEach(function (c, i) {
+      if (i) route.appendChild(el("span", "arrow", "＋"));
+      var b = el("button", "step" + (isRecon(c[0]) ? " recon" : ""));
+      b.type = "button";
+      b.textContent = labelOf(c[c.length - 1]);
+      b.addEventListener("click", function () { open(c[c.length - 1]); });
+      route.appendChild(b);
+    });
+    route.appendChild(el("span", "arrow", "→"));
+    route.appendChild(el("span", "step you", labelOf(qid)));
+
+    document.getElementById("meta").textContent =
+      comps.length + " parts · how the word was formed";
+    renderDetail(null);
+  }
+
   function render() {
+    if (state.mode === "form" && state.tree && state.tree.formation) {
+      renderFormation();
+      return;
+    }
     var T = state.tree, root = viewRoot();
     var h = d3.hierarchy(visibleHierarchy(root), function (x) { return x.kids; });
     (state.tidy ? d3.tree() : d3.cluster()).nodeSize([ROW, 1])(h);
@@ -1322,9 +1457,11 @@
     box.appendChild(el("h2", null, "Node"));
 
     var found = null;
-    h.descendants().forEach(function (p) {
-      if (!p.data.more && p.data.n.id === state.sel) found = p;
-    });
+    if (h) {
+      h.descendants().forEach(function (p) {
+        if (!p.data.more && p.data.n.id === state.sel) found = p;
+      });
+    }
 
     if (!found) {
       box.appendChild(el("p", "placeholder",
@@ -1426,6 +1563,7 @@
       box.appendChild(acts);
     }
 
+    if (!h) return;
     var present = {}, kindsSeen = {};
     h.descendants().forEach(function (p) {
       if (p.data.more) return;
@@ -1476,6 +1614,9 @@
 
   function open(id, forceRoot) {
     state.tree = treeFor(id, forceRoot);
+    // a word made of parts opens on how it was made; everything else on descent
+    state.mode = (state.tree.formation && forceRoot === undefined) ? "form" : "tree";
+    syncModeButton();
     state.focus = null;
     state.sel = id;
     tagFamilies(state.tree.tree);
@@ -1564,6 +1705,19 @@
     if (e.key === "+" || e.key === "=") { setZoom(state.zoom * 1.25); e.preventDefault(); }
     else if (e.key === "-") { setZoom(state.zoom / 1.25); e.preventDefault(); }
     else if (e.key === "0") { setZoom(1); e.preventDefault(); }
+  });
+
+  function syncModeButton() {
+    var b = document.getElementById("view");
+    var can = !!(state.tree && state.tree.formation);
+    b.style.display = can ? "" : "none";
+    b.textContent = state.mode === "form" ? "Descent" : "How it was formed";
+    b.setAttribute("aria-pressed", String(state.mode === "form"));
+  }
+  document.getElementById("view").addEventListener("click", function () {
+    state.mode = state.mode === "form" ? "tree" : "form";
+    syncModeButton();
+    render();
   });
 
   document.getElementById("mode").addEventListener("click", function () {
