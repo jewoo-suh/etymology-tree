@@ -684,6 +684,35 @@
      `withRoot` decides whether `root` edges count as steps. They normally don't,
      but when the reader deliberately branches from a bare root they must, or the
      Latin and Greek stages hanging off it by root edges stay invisible. */
+  /* The ancestry of a component, capped: enough to read as a branch, not so
+     much that a suffix's own deep history swamps the word being looked at. */
+  var chainCache = {};
+  function componentChain(id) {
+    if (chainCache[id]) return chainCache[id];
+    var line = [id], seen = {}, cur = id;
+    seen[id] = 1;
+    for (var step = 0; step < 4; step++) {
+      var ps = UP[cur] || [], ks = UPK[cur] || [], pick = -1, best = -1;
+      for (var i = 0; i < ps.length; i++) {
+        if (ks[i] === K_ROOT || seen[ps[i]]) continue;
+        if (ks[i] === K_DER && code(ps[i]) === code(cur)) continue;  // sideways
+        var n = reachCount(ps[i]);
+        if (n > best) { best = n; pick = ps[i]; }
+      }
+      if (pick < 0) break;
+      seen[pick] = 1;
+      line.unshift(pick);
+      cur = pick;
+    }
+    return (chainCache[id] = line);
+  }
+
+  /* A component branch ends one column short of the word it feeds, so its
+     nodes are placed by counting back from there rather than by nesting depth. */
+  function ghostDepth(p) {
+    return Math.max(0, p.depth - p.data.glen + p.data.gpos);
+  }
+
   var reachCache = [{}, {}];
   function reachSet(id, limit, withRoot) {
     var cache = reachCache[withRoot ? 1 : 0];
@@ -731,7 +760,7 @@
     return keep.length ? keep : out;
   }
 
-  function buildTree(rootId, route, withRoot) {
+  function buildTree(rootId, route, withRoot, qid) {
     var budget = NODE_BUDGET, onStack = {};
     function rec(id, depth, kind, parentOn, from) {
       budget--;
@@ -740,8 +769,11 @@
          is water AND fall, and hanging it under water alone hides half of where
          it came from. Record the parents this drawing cannot show, so they can
          be drawn as merges or named beside the word. */
+      /* Only for the word being looked at. Showing every node's components put
+         a dot beside half the tree, which is noise: the question "what was this
+         built from" is being asked about one word, not about all of them. */
       var others = [];
-      if (from !== undefined) {
+      if (from !== undefined && id === qid) {
         var ps = UP[id] || [], ks = UPK[id] || [];
         for (var q = 0; q < ps.length; q++) {
           if (ps[q] === from || ks[q] === K_ROOT) continue;
@@ -813,7 +845,7 @@
     if (top === undefined || top === null) {
       var c = climb(id);
       if (!c) {
-        return { q: id, root: id, tree: buildTree(id, [id], true), chain: [id] };
+        return { q: id, root: id, tree: buildTree(id, [id], true, id), chain: [id] };
       }
       route = c.route;
       top = route[0];
@@ -821,7 +853,7 @@
       var anc = ancestorsVia(id, [1, 1, 1, 1]);
       route = longestRoute(top, id, [1, 1, 1, 1], anc.depth) || [top, id];
     }
-    var tree = buildTree(top, route, true);
+    var tree = buildTree(top, route, true, id);
 
     /* The chain is worked out on the ancestor set; the tree is built downward
        with shortcut edges removed. They can disagree by a step, and when they
@@ -1021,7 +1053,15 @@
         o.kids = [];
         shownChildren(n).forEach(function (c) {
           (c.others || []).forEach(function (g) {
-            o.kids.push({ n: c, more: 0, ghost: g });
+            /* Give the component its own lineage rather than a single dot, so
+               teacher shows a teach branch and an -er branch of the same kind,
+               meeting at the word. */
+            var line = componentChain(g), head = null;
+            for (var k = line.length - 1; k >= 0; k--) {
+              head = { n: c, more: 0, ghost: line[k], gpos: k, glen: line.length,
+                       kids: head ? [head] : undefined };
+            }
+            if (head) o.kids.push(head);
           });
           o.kids.push(conv(c));
         });
@@ -1047,11 +1087,8 @@
     var maxw = {};
     all.forEach(function (p) {
       if (p.data.ghost !== undefined) {
-        var gd = Math.max(0, p.depth - 1);
-        // the component is drawn part-way into the gap, so the column before it
-        // must be wide enough to hold that offset plus the label itself
-        maxw[gd] = Math.max(maxw[gd] || 0,
-          (textW(labelOf(p.data.ghost), 7.2) + 62) / 0.58);
+        var gd = ghostDepth(p);
+        maxw[gd] = Math.max(maxw[gd] || 0, textW(labelOf(p.data.ghost), 7.2) + 40);
         return;
       }
       var w = p.data.more ? 118 : estWidth(p.data.n);
@@ -1064,14 +1101,7 @@
     var width = acc + PAD, height = (maxB - minB) + PAD * 2;
     all.forEach(function (p) {
       p.sy = p.x - minB + PAD;
-      if (p.data.ghost === undefined) { p.sx = colX[p.depth]; return; }
-      /* Components sit in the gap between columns rather than in the parent's
-         column proper. A parent is placed at the midpoint of its children, so
-         dropping a component into the same column risks landing on top of it;
-         the gap is empty by construction, and the word still reads as arriving
-         from the side. */
-      var back = colX[Math.max(0, p.depth - 1)], here = colX[p.depth];
-      p.sx = back + (here - back) * 0.42;
+      p.sx = colX[p.data.ghost === undefined ? p.depth : ghostDepth(p)];
     });
 
     var svg = document.getElementById("svg");
@@ -1135,14 +1165,18 @@
     var gMerge = svgEl("g", {});
     all.forEach(function (p) {
       if (p.data.ghost === undefined) return;
-      var dst = target.get(p.data.n);
-      if (!dst) return;
-      var mx = (p.sx + dst.sx) / 2;
+      // the branch runs along itself, then its last node curves into the word
+      var to = (p.data.gpos === p.data.glen - 1) ? target.get(p.data.n)
+             : all.find(function (q) {
+                 return q.parent === p && q.data.ghost !== undefined;
+               });
+      if (!to) return;
+      var mx = (p.sx + to.sx) / 2;
       gMerge.appendChild(svgEl("path", {
         "class": "merge",
         d: "M" + (p.sx + 5) + "," + p.sy +
-           "C" + mx + "," + p.sy + " " + mx + "," + dst.sy +
-           " " + (dst.sx - 3) + "," + dst.sy
+           "C" + mx + "," + p.sy + " " + mx + "," + to.sy +
+           " " + (to.sx - 3) + "," + to.sy
       }));
     });
     stage.appendChild(gMerge);
