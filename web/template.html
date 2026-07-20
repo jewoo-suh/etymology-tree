@@ -304,6 +304,9 @@
         <div class="route" id="route"></div>
         <div class="spacer"></div>
         <div class="controls">
+          <button class="btn" type="button" id="zoomout" title="Zoom out">&minus;</button>
+          <button class="btn" type="button" id="zoomin" title="Zoom in">+</button>
+          <button class="btn" type="button" id="zoomfit" title="Reset zoom">Fit</button>
           <button class="btn" type="button" id="mode" aria-pressed="false">Even tips</button>
           <button class="btn" type="button" id="expand">Expand all</button>
           <button class="btn" type="button" id="collapse">Fold</button>
@@ -444,7 +447,8 @@
 
   var ROW = 22, PAD = 26, DOT = 3.4, GAP = 36, FANOUT = 18;
   var DEPTH_CAP = 12, NODE_BUDGET = 5000;
-  var state = { q: null, tree: null, open: {}, all: {}, fam: {}, tidy: true, sel: null, focus: null };
+  var state = { q: null, tree: null, open: {}, all: {}, fam: {},
+               tidy: true, sel: null, focus: null, zoom: 1 };
 
   function svgEl(t, a) {
     var e = document.createElementNS(SVGNS, t);
@@ -735,8 +739,13 @@
         var ps = UP[id] || [], ks = UPK[id] || [];
         for (var q = 0; q < ps.length; q++) {
           if (ps[q] === from || ks[q] === K_ROOT || isAffix(ps[q])) continue;
+          /* Only components of a compound, meaning same-language word-formation.
+             Taking every second parent was far too broad: father has seventeen
+             Middle English spellings as parents, so the canvas filled with long
+             curves connecting variants of the same word to each other. */
+          if (ks[q] !== K_DER || code(ps[q]) !== code(id)) continue;
           others.push(ps[q]);
-          if (others.length >= 3) break;
+          if (others.length >= 2) break;
         }
       }
       var out = {
@@ -950,7 +959,9 @@
   function estWidth(n) {
     var extra = 0;
     if (n.others && n.others.length) {
-      extra = 18 + textW(n.others.map(function (o) { return WORDS[o]; }).join(" + "), 6.6);
+      // capped: one long component name should not stretch a whole column
+      extra = Math.min(96, 18 + textW(
+        n.others.map(function (o) { return WORDS[o]; }).join(" + "), 6.6));
     }
     return labelW(n) + textW(n.lang || n.code, 5.5) + 26 +
            (n.children.length && !isOpen(n) ? 30 : 0) + extra;
@@ -993,9 +1004,15 @@
 
     var svg = document.getElementById("svg");
     svg.textContent = "";
-    svg.setAttribute("width", width);
-    svg.setAttribute("height", height);
+    /* Zoom by scaling one wrapping group and sizing the SVG to match, rather
+       than by CSS transform on the element: the canvas scrolls, and the
+       scrollable area has to grow with the drawing or half of it becomes
+       unreachable at higher magnifications. */
+    var z = state.zoom;
+    svg.setAttribute("width", Math.round(width * z));
+    svg.setAttribute("height", Math.round(height * z));
     svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    var stage = svgEl("g", {});
 
     var gGuide = svgEl("g", {});
     depths.forEach(function (dp) {
@@ -1004,7 +1021,7 @@
         "class": "guide", x1: colX[dp] - GAP / 2, y1: 0, x2: colX[dp] - GAP / 2, y2: height
       }));
     });
-    svg.appendChild(gGuide);
+    stage.appendChild(gGuide);
 
     /* Each link starts just past its own parent's label rather than at the dot,
        so a branch never strikes through the word it comes from. Weight tracks
@@ -1032,8 +1049,8 @@
            " " + mid + "," + b.sy + " " + b.sx + "," + b.sy
       }));
     });
-    svg.appendChild(gLinks);
-    svg.appendChild(gOn);
+    stage.appendChild(gLinks);
+    stage.appendChild(gOn);
 
     /* Second parents. Where the other half of a compound is already on screen,
        join it up so the two branches visibly converge; where it is not, name it
@@ -1048,7 +1065,9 @@
       p.mergeNames = [];
       p.data.n.others.forEach(function (o) {
         var src = placed[o];
-        if (src && src !== p && src.sx < p.sx) {
+        // a curve spanning half the canvas reads as noise, not as a connection
+        var near = src && Math.abs(src.sy - p.sy) < 340;
+        if (src && src !== p && src.sx < p.sx && near) {
           var midY = (src.sy + p.sy) / 2 + (p.sy > src.sy ? -14 : 14);
           gMerge.appendChild(svgEl("path", {
             "class": "merge",
@@ -1061,7 +1080,7 @@
         }
       });
     });
-    svg.appendChild(gMerge);
+    stage.appendChild(gMerge);
 
     var gNodes = svgEl("g", {});
     all.forEach(function (p) {
@@ -1129,10 +1148,12 @@
         gNodes.appendChild(mt);
       }
     });
-    svg.appendChild(gNodes);
+    stage.appendChild(gNodes);
 
     /* Show the whole lineage, not just its two ends: the stages in between are
        the interesting part, and each one is a word you can open in its own right. */
+    svg.appendChild(stage);
+
     var route = document.getElementById("route");
     route.textContent = "";
     (T.chain || [T.q]).forEach(function (step, i) {
@@ -1385,6 +1406,36 @@
   });
   document.addEventListener("click", function (e) {
     if (!e.target.closest || !e.target.closest(".search")) resBox.textContent = "";
+  });
+
+  function setZoom(z, anchor) {
+    var canvas = document.getElementById("canvas");
+    var prev = state.zoom;
+    state.zoom = Math.max(0.25, Math.min(4, z));
+    // keep whatever was under the pointer (or the middle) where it was
+    var ax = anchor ? anchor.x : canvas.clientWidth / 2;
+    var ay = anchor ? anchor.y : canvas.clientHeight / 2;
+    var fx = (canvas.scrollLeft + ax) / prev;
+    var fy = (canvas.scrollTop + ay) / prev;
+    render();
+    canvas.scrollLeft = fx * state.zoom - ax;
+    canvas.scrollTop = fy * state.zoom - ay;
+  }
+  document.getElementById("zoomin").addEventListener("click", function () { setZoom(state.zoom * 1.25); });
+  document.getElementById("zoomout").addEventListener("click", function () { setZoom(state.zoom / 1.25); });
+  document.getElementById("zoomfit").addEventListener("click", function () { setZoom(1); });
+  document.getElementById("canvas").addEventListener("wheel", function (e) {
+    if (!e.ctrlKey && !e.metaKey) return;      // plain wheel still scrolls
+    e.preventDefault();
+    var r = this.getBoundingClientRect();
+    setZoom(state.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12),
+            { x: e.clientX - r.left, y: e.clientY - r.top });
+  }, { passive: false });
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "INPUT") return;
+    if (e.key === "+" || e.key === "=") { setZoom(state.zoom * 1.25); e.preventDefault(); }
+    else if (e.key === "-") { setZoom(state.zoom / 1.25); e.preventDefault(); }
+    else if (e.key === "0") { setZoom(1); e.preventDefault(); }
   });
 
   document.getElementById("mode").addEventListener("click", function () {
