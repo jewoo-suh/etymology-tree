@@ -29,7 +29,7 @@ Whisky and water share a root. Grammar and carve share one too — `*gerbʰ-`,
 | | words | definitions | size | for |
 |---|---|---|---|---|
 | `index.html` | 2,000,000 | 1,375,461 | 77 MB | this site |
-| full | 3,103,066 | 2,092,281 | 128 MB | [Releases](../../releases) — offline use |
+| full | 3,103,066 | 2,279,472 | 128 MB | [Releases](../../releases) — offline use |
 | compact | 795,000 | proto-forms only | 16 MB | embedding where size is capped |
 
 ```sh
