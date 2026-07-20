@@ -222,6 +222,18 @@
   .wordsub {
     font-size: 10.5px; fill: var(--muted); dominant-baseline: middle;
   }
+  /* affixes drawn into the graph beside the word they formed */
+  .affixstub {
+    font-family: var(--serif); font-size: 11px; fill: var(--accent);
+    fill-opacity: .85; dominant-baseline: middle; cursor: pointer;
+    paint-order: stroke fill; stroke: var(--canvas); stroke-width: 3px;
+    stroke-linejoin: round;
+  }
+  .affixstub:hover { text-decoration: underline; fill-opacity: 1; }
+  .affixlink {
+    fill: none; stroke: var(--accent); stroke-width: 1;
+    stroke-dasharray: 1.5 2.5; stroke-opacity: .7;
+  }
   .lbl.ghost {
     font-size: 12.5px; fill: var(--accent); fill-opacity: .9; cursor: pointer;
   }
@@ -562,7 +574,7 @@
   function longestRoute(root, id, allow, inSet) {
     var memo = {}, onStack = {};
     function best(cur) {
-      if (cur === id) return [id];
+      if (cur === id) return { cost: 0, route: [id] };
       if (memo[cur] !== undefined) return memo[cur];
       if (onStack[cur]) return null;          // cycle: ignore this way round
       onStack[cur] = 1;
@@ -571,13 +583,23 @@
         var c = ks[i];
         if (!allow[kk[i]] || inSet[c] === undefined) continue;
         var sub = best(c);
-        if (sub && (!found || sub.length > found.length)) found = sub;
+        if (!sub) continue;
+        /* Derivation is a side step, not a generation: night once climbed
+           through *nahtāną "to become night" purely because the verb detour
+           was longer. Inherited and borrowed steps are free, derivational
+           ones cost, and length only breaks ties. */
+        var cost = sub.cost + (kk[i] === K_DER ? 1 : kk[i] === K_ROOT ? 2 : 0);
+        if (!found || cost < found.cost ||
+            (cost === found.cost && sub.route.length + 1 > found.route.length)) {
+          found = { cost: cost, route: [cur].concat(sub.route) };
+        }
       }
       delete onStack[cur];
-      memo[cur] = found ? [cur].concat(found) : null;
+      memo[cur] = found;
       return memo[cur];
     }
-    return best(root);
+    var got = best(root);
+    return got ? got.route : null;
   }
 
   function passWith(id, allow, allowBare) {
@@ -1546,6 +1568,35 @@
       }
 
     });
+    /* The affix a step was built with, drawn into the graph itself: nighten
+       shows its -en arriving, teacher its -er. Path nodes only -- one beside
+       every node in the tree was tried, and it was noise. */
+    var gAff = svgEl("g", {});
+    all.forEach(function (p) {
+      if (p.data.more || p.data.ghost !== undefined || !p.data.n.path) return;
+      var n = p.data.n, ps = UP[n.id] || [], ks = UPK[n.id] || [];
+      var shown = 0;
+      for (var j = 0; j < ps.length && shown < 2; j++) {
+        var q = ps[j];
+        if (ks[j] !== K_DER || code(q) !== n.code || !isAffix(q)) continue;
+        var ay = p.sy + 13 + shown * 12;
+        gAff.appendChild(svgEl("path", {
+          "class": "affixlink",
+          d: "M" + (p.sx - 10) + "," + ay +
+             "Q" + (p.sx - 3) + "," + ay + " " + (p.sx - 1) + "," + (p.sy + 4)
+        }));
+        var t = svgEl("text", {
+          "class": "affixstub", x: p.sx - 13, y: ay, "text-anchor": "end"
+        });
+        t.textContent = "＋" + labelOf(q);
+        (function (pid) {
+          t.addEventListener("click", function () { open(pid); });
+        })(q);
+        gAff.appendChild(t);
+        shown++;
+      }
+    });
+    stage.appendChild(gAff);
     stage.appendChild(gNodes);
 
     /* Show the whole lineage, not just its two ends: the stages in between are

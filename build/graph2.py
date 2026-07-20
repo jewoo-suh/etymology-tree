@@ -331,27 +331,45 @@ def main():
         ns = sense_ns.get(sk)
         if not ns:
             stats["phantom"] += 1
-            return intern(lg + ":" + term), False, "phantom"
+            return intern(lg + ":" + term), False, "phantom", True
+        # Two different questions, two different evidence sets. WHICH sense may
+        # use the reference's own spelling (picking the sense of bred glossed
+        # "bread"). WHETHER to trust the landing may not: a gloss that names its
+        # own headword -- "The eye; the organ used for sight" -- would vouch for
+        # itself, and that is how the egg tree kept hold of the organ.
+        own = wtok(term)
+        want_trust = gloss_hints | ctx
+        want_sel = want_trust | own
+
+        def trust_of(n):
+            g = glosses.get(sk + SEP + str(n), "")
+            return (not g) or (not want_trust) or bool(tokens(g) & want_trust)
+
         if len(ns) == 1:
-            stats["unique"] += 1
-            return kf(sk, ns[0], ns), True, "unique"
+            trusted = trust_of(ns[0])
+            stats["unique" if trusted else "unique untrusted"] += 1
+            return kf(sk, ns[0], ns), True, "unique", trusted
         for sid in id_hints:
             n = sidmap.get(sk + SEP + sid)
             if n is not None and n in ns:
                 stats["senseid"] += 1
-                return kf(sk, n, ns), True, "senseid"
-        want = gloss_hints | ctx
-        if want:
+                return kf(sk, n, ns), True, "senseid", True
+        if want_sel:
             best_n, best_s = None, 0
             for n in ns:
-                sc = len(tokens(glosses.get(sk + SEP + str(n), "")) & want)
+                sc = len(tokens(glosses.get(sk + SEP + str(n), "")) & want_sel)
                 if sc > best_s:
                     best_s, best_n = sc, n
             if best_n is not None:
-                stats["gloss"] += 1
-                return kf(sk, best_n, ns), True, "gloss"
+                trusted = trust_of(best_n)
+                stats["gloss" if trusted else "gloss untrusted"] += 1
+                return kf(sk, best_n, ns), True, "gloss", trusted
         stats["first"] += 1
-        return kf(sk, ns[0], ns), True, "first"
+        return kf(sk, ns[0], ns), True, "first", False
+
+    def wtok(w):
+        return tokens("".join(ch for ch in unicodedata.normalize("NFD", w)
+                              if not unicodedata.combining(ch)))
 
     def anchored_key(c, w, n):
         sk = c + SEP + w
@@ -393,11 +411,25 @@ def main():
             if code not in langnames and nd.get("lang"):
                 langnames[code] = nd["lang"]
             hint = tokens(nd.get("sense", ""))
-            ckey, entry, _how = resolve(code, w, hint, set(), parent_ctx)
+            ckey, entry, _how, trusted = resolve(code, w, hint, set(), parent_ctx)
             note_node(ckey, w.lstrip("*").strip(), entry)
-            add_edge(parent_key, ckey, "bor" if nd.get("b") else "inh")
+            # An untrusted landing is demoted to a root-kind edge: still on
+            # record, still in the rail, but never a step the chain walks
+            # unless nothing else exists. This is what severs sin from sun
+            # and dough from day without deleting anything.
+            kind = "bor" if nd.get("b") else "inh"
+            if not trusted:
+                stats["demoted"] += 1
+                kind = "root"
+            add_edge(parent_key, ckey, kind)
             if nd.get("d"):
-                walk_desc(nd["d"], ckey, hint or parent_ctx)
+                # A doubtful landing must not anchor what hangs below it. The
+                # moon tree's ME ref once fell to mone "lamentation"; the edge
+                # was rightly demoted, but the subtree stayed attached, so
+                # lamentation acquired moon as a trusted child. Children of an
+                # untrusted node climb over it to the last trusted ancestor.
+                walk_desc(nd["d"], ckey if trusted else parent_key,
+                          (hint or parent_ctx) | wtok(w))
 
     done = 0
     with io.open(os.path.join(EX, "source2.jsonl"), encoding="utf-8") as fh:
@@ -408,9 +440,12 @@ def main():
             e = json.loads(line)
             akey, ask, an = anchored_key(e["c"], e["w"], norm_n(e.get("n", 0)))
             note_node(akey, e["w"], True)
-            ctx = tokens(glosses.get(ask + SEP + str(an), ""))
+            ctx = tokens(glosses.get(ask + SEP + str(an), "")) | wtok(e["w"])
             for kind, lg, term, gh, ih in parse_templates(e.get("t") or [], e["c"]):
-                pkey, entry, how = resolve(lg, term, gh, ih, ctx)
+                pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx)
+                if not trusted and kind in ("inh", "bor", "der", "cal"):
+                    stats["demoted"] += 1
+                    kind = "root"
                 # A formation part that resolves only by guessing among senses is
                 # dropped rather than attached. The guess is what made Korea a
                 # child of Core, the birth name of Persephone: {{af|en|Core|-ia}}
@@ -448,15 +483,53 @@ def main():
     for key in node_entry:
         c = key.split(":", 1)[0]
         real.setdefault((c, fold(node_word[key])), key)
-    alias = {}
+
+    def gloss_of_key(key):
+        c, rest = key.split(":", 1)
+        base = rest.split("#")[0]
+        n = rest[len(base) + 1:] if "#" in rest else "0"
+        return glosses.get(c + SEP + base + SEP + n, "")
+
+    def soft_match(a, b):
+        for ta in a:
+            for tb in b:
+                if ta == tb:
+                    return True
+                if len(ta) >= 4 and len(tb) >= 4 and                         (ta.startswith(tb) or tb.startswith(ta)):
+                    return True
+        return False
+
+    cand = {}
     for key in node_word:
         if key in node_entry:
             continue
         c = key.split(":", 1)[0]
         tgt = real.get((c, fold(node_word[key])))
         if tgt and tgt != key:
-            alias[key] = tgt
-    print("diacritic phantoms redirected: {:,}".format(len(alias)), flush=True)
+            cand[key] = tgt
+
+    # The redirect must prove the target is the same word, or stay a phantom.
+    # Old English daġ (a variant of dæġ, "day") folded into dag, an entry that
+    # means dough, and the whole day lineage inherited a kitchen. Neighbours
+    # know better: compare the target's gloss against the words and glosses
+    # around the phantom, prefix-leniently, since "defend" must match
+    # "defending" or mūnītiō never reaches mūniō.
+    neigh = collections.defaultdict(set)
+    for (pp, cc) in edges:
+        if pp in cand:
+            neigh[pp] |= wtok(node_word.get(cc, "")) | tokens(gloss_of_key(cc))
+        if cc in cand:
+            neigh[cc] |= wtok(node_word.get(pp, "")) | tokens(gloss_of_key(pp))
+    alias, skipped = {}, 0
+    for key, tgt in cand.items():
+        g = tokens(gloss_of_key(tgt))
+        nb = neigh.get(key)
+        if g and nb and not soft_match(g, nb):
+            skipped += 1
+            continue
+        alias[key] = tgt
+    print("diacritic phantoms redirected: {:,}   kept as phantoms: {:,}".format(
+        len(alias), skipped), flush=True)
     if alias:
         remapped = {}
         for (p, c), kind in edges.items():

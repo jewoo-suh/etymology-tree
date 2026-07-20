@@ -82,6 +82,17 @@ See [RECON-FINDINGS.md](RECON-FINDINGS.md) for how the data was assessed, and
 
 ## Known limits
 
+**Every cross-reference is resolved with evidence, and demoted without it.**
+A reference by spelling must earn its landing: a unique sense, a sense-id, or
+gloss overlap with the context around the edge. A landing with no evidence is
+demoted to a last-resort edge the chain will not walk, an untrusted node never
+anchors the subtree below it, and a diacritic redirect must prove its target
+means the same thing — Old English *daġ* ("day") no longer folds into *dag*
+("dough"), it stays an honest phantom. This is what keeps *star* off the stair,
+*sun* out of sin, *eye* out of the egg, *hound* out of the hand, and *moon* out
+of lamentation: every one of those was a confident chain once, welded together
+by a shared spelling.
+
 **Homographs are split by etymology, and cross-references are resolved, not
 known.** Nodes are keyed on Wiktionary's `etymology_number`, so *school* the
 institution and *school* of fish are separate nodes with separate chains
