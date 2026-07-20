@@ -455,7 +455,8 @@
   var ROW = 22, PAD = 26, DOT = 3.4, GAP = 36, FANOUT = 18;
   var DEPTH_CAP = 12, NODE_BUDGET = 5000;
   var state = { q: null, tree: null, open: {}, all: {}, fam: {},
-               tidy: true, sel: null, focus: null, zoom: 1, mode: 'tree' };
+               tidy: true, sel: null, focus: null, zoom: 1, mode: 'tree',
+               bandOpen: {} };
 
   function svgEl(t, a) {
     var e = document.createElementNS(SVGNS, t);
@@ -1096,111 +1097,224 @@
     svg.textContent = "";
     var z = state.zoom, stage = svgEl("g", {});
 
-    var L = 0;
-    comps.forEach(function (c) { L = Math.max(L, c.length); });
+    /* Each part gets the whole tree it deserves, not a single line. A component
+       is a word with its own history and its own descendants; drawing it as one
+       stroke says otherwise. So lay out a full tree per part, stack them, and
+       slide each sideways until the part itself lands in one shared column --
+       then the word sits to the right of that column and every branch reaches
+       it across the same gap, whatever depth its own history happens to be. */
+    var bands = [], joinX = 0, totalH = 0;
+    comps.forEach(function (chain) {
+      var cid = chain[chain.length - 1];
+      var c = climb(cid);
+      var route = c ? c.route : [cid];
+      var root = route[0];
+      var tree = buildTree(root, route, true, -1);
+      var drawn = pathInTree(tree, cid, (function () {
+        var w = {};
+        route.forEach(function (x) { w[x] = 1; });
+        return w;
+      })());
+      if (drawn) drawn.forEach(function (nd) { nd.path = true; });
+      if (state.bandOpen[cid] === undefined) state.bandOpen[cid] = defaultOpen(tree);
+      var saved = state.open;
+      state.open = state.bandOpen[cid];
+      var h = d3.hierarchy(visibleHierarchy(tree), function (x) { return x.kids; });
+      (state.tidy ? d3.tree() : d3.cluster()).nodeSize([ROW, 1])(h);
+      state.open = saved;
+      // colours are per band, worked out from that band's own root
+      tagFamilies(tree);
+      var famSnapshot = state.fam;
 
-    // columns wide enough for the widest label standing in each
-    var colw = [];
-    for (var d = 0; d <= L; d++) colw[d] = 60;
-    comps.forEach(function (c) {
-      c.forEach(function (nid, i) {
-        var d = L - c.length + i;
-        colw[d] = Math.max(colw[d], textW(labelOf(nid), 7.7) +
-                           textW(langName(nid), 5.5) + 34);
+      var all = h.descendants(), minB = Infinity, maxB = -Infinity;
+      all.forEach(function (p) {
+        if (p.x < minB) minB = p.x;
+        if (p.x > maxB) maxB = p.x;
       });
-    });
-    colw[L] = Math.max(colw[L], textW(labelOf(qid), 9.2) +
-                       textW(langName(qid), 5.5) + 40);
-    var colX = [], acc = PAD;
-    for (d = 0; d <= L; d++) { colX[d] = acc; acc += colw[d] + GAP; }
-    var width = acc + PAD;
+      var maxw = {};
+      all.forEach(function (p) {
+        var w = p.data.more ? 118 : estWidth(p.data.n);
+        maxw[p.depth] = Math.max(maxw[p.depth] || 0, w);
+      });
+      var colX = {}, acc = 0;
+      Object.keys(maxw).map(Number).sort(function (a, b) { return a - b; })
+        .forEach(function (dp) { colX[dp] = acc; acc += maxw[dp] + GAP; });
+      all.forEach(function (p) { p.sy = p.x - minB; p.sx = colX[p.depth]; });
 
-    var BAND = ROW * 2.2;
-    var height = comps.length * BAND + PAD * 2;
-    var midY = PAD + (comps.length * BAND) / 2 - BAND / 2;
+      var anchor = null;
+      all.forEach(function (p) {
+        if (!p.data.more && p.data.n.id === cid &&
+            (!anchor || p.depth > anchor.depth)) anchor = p;
+      });
+      if (!anchor) anchor = all[all.length - 1];
+      var right = anchor.sx + estWidth(anchor.data.n);
+      joinX = Math.max(joinX, right);
+
+      var band = { cid: cid, h: h, all: all, anchor: anchor, colX: colX,
+                   maxw: maxw, height: (maxB - minB) + ROW, width: acc,
+                   dy: totalH, fam: famSnapshot };
+      totalH += band.height + ROW * 1.6;
+      bands.push(band);
+    });
+
+    bands.forEach(function (b) { b.dx = joinX - (b.anchor.sx + estWidth(b.anchor.data.n)); });
+
+    var wordX = joinX + GAP * 2.2;
+    var width = wordX + estWidth({ id: qid, word: WORDS[qid], code: code(qid),
+                                   lang: langName(qid), children: [] }) + PAD * 2;
+    var height = totalH + PAD * 2;
+    var midY = PAD + (totalH - ROW * 1.6) / 2;
 
     svg.setAttribute("width", Math.round(width * z));
     svg.setAttribute("height", Math.round(height * z));
     svg.setAttribute("viewBox", "0 0 " + width + " " + height);
 
-    var gL = svgEl("g", {}), gN = svgEl("g", {});
-    comps.forEach(function (chain, ci) {
-      var y = PAD + ci * BAND;
-      var fam = "var(--fam-" + (FAMVAR[code(chain[0])] || "oth") + ")";
-      chain.forEach(function (nid, i) {
-        var d = L - chain.length + i, x = colX[d];
-        if (i) {
-          var px = colX[d - 1] + Math.min(colw[d - 1],
-            textW(labelOf(chain[i - 1]), 7.7) + 14);
-          gL.appendChild(svgEl("path", {
-            "class": "link k0", stroke: fam, "stroke-width": 1.6,
-            "stroke-opacity": .75,
-            d: "M" + px + "," + y + "H" + (x - 4)
-          }));
-        }
-        gN.appendChild(svgEl("circle", {
-          "class": "dot", cx: x, cy: y, r: DOT,
-          fill: "var(--canvas)", stroke: fam
-        }));
-        var t = svgEl("text", {
-          "class": "lbl" + (isRecon(nid) ? " recon" : ""), x: x + 9, y: y
-        });
-        t.textContent = labelOf(nid);
-        t.addEventListener("click", function () { open(nid); });
-        t.style.cursor = "pointer";
-        gN.appendChild(t);
-        var sub = svgEl("text", {
-          "class": "sub", x: x + 16 + textW(labelOf(nid), 7.7), y: y + 0.5
-        });
-        sub.textContent = isAffix(nid) ? "affix" : langName(nid);
-        gN.appendChild(sub);
-      });
+    bands.forEach(function (b) {
+      var g = svgEl("g", { transform: "translate(" + (b.dx + PAD) + "," + (b.dy + PAD) + ")" });
+      state.fam = b.fam;
+      drawTreeInto(g, b.all, b.colX, b.maxw, b.cid, state.bandOpen[b.cid]);
+      stage.appendChild(g);
 
-      // the branch turns and joins the word
-      var lastX = colX[L - 1] + Math.min(colw[L - 1],
-        textW(labelOf(chain[chain.length - 1]), 7.7) + 14);
-      var mx = (lastX + colX[L]) / 2;
-      gL.appendChild(svgEl("path", {
-        "class": "merge", stroke: fam, "stroke-opacity": .9, "stroke-width": 1.7,
+      // the part reaches across to the word
+      var ax = b.dx + PAD + b.anchor.sx + estWidth(b.anchor.data.n);
+      var ay = b.dy + PAD + b.anchor.sy;
+      var mx = (ax + wordX) / 2;
+      stage.appendChild(svgEl("path", {
+        "class": "merge", "stroke-width": 1.8, "stroke-opacity": .95,
         "stroke-dasharray": "none",
-        d: "M" + lastX + "," + y + "C" + mx + "," + y + " " + mx + "," + midY +
-           " " + (colX[L] - 4) + "," + midY
+        d: "M" + ax + "," + ay + "C" + mx + "," + ay + " " + mx + "," + midY +
+           " " + (wordX - 4) + "," + midY
       }));
     });
 
-    gN.appendChild(svgEl("circle", {
-      "class": "dot", cx: colX[L], cy: midY, r: DOT + 1.8,
+    var gW = svgEl("g", {});
+    gW.appendChild(svgEl("circle", {
+      "class": "dot", cx: wordX, cy: midY, r: DOT + 1.8,
       fill: "var(--accent)", stroke: "var(--accent)"
     }));
-    var qt = svgEl("text", { "class": "lbl you on", x: colX[L] + 11, y: midY });
+    var qt = svgEl("text", { "class": "lbl you on", x: wordX + 11, y: midY });
     qt.textContent = labelOf(qid);
-    gN.appendChild(qt);
+    gW.appendChild(qt);
     var qs = svgEl("text", {
-      "class": "sub", x: colX[L] + 18 + textW(labelOf(qid), 9.2), y: midY + 0.5
+      "class": "sub", x: wordX + 18 + textW(labelOf(qid), 9.2), y: midY + 0.5
     });
     qs.textContent = langName(qid);
-    gN.appendChild(qs);
-
-    stage.appendChild(gL);
-    stage.appendChild(gN);
+    gW.appendChild(qs);
+    stage.appendChild(gW);
     svg.appendChild(stage);
 
     var route = document.getElementById("route");
     route.textContent = "";
     comps.forEach(function (c, i) {
       if (i) route.appendChild(el("span", "arrow", "＋"));
-      var b = el("button", "step" + (isRecon(c[0]) ? " recon" : ""));
+      var cid = c[c.length - 1];
+      var b = el("button", "step" + (isRecon(cid) ? " recon" : ""));
       b.type = "button";
-      b.textContent = labelOf(c[c.length - 1]);
-      b.addEventListener("click", function () { open(c[c.length - 1]); });
+      b.textContent = labelOf(cid);
+      b.addEventListener("click", function () { open(cid); });
       route.appendChild(b);
     });
     route.appendChild(el("span", "arrow", "→"));
     route.appendChild(el("span", "step you", labelOf(qid)));
 
+    var shown = bands.reduce(function (s, b) { return s + b.all.length; }, 0);
     document.getElementById("meta").textContent =
-      comps.length + " parts · how the word was formed";
+      comps.length + " parts · " + shown.toLocaleString() + " shown";
     renderDetail(null);
+  }
+
+  function findRootOf(h) {
+    var r = h;
+    while (r.parent) r = r.parent;
+    return r.data.n;
+  }
+
+  /* Draw a laid-out tree into a group. Shared by the descent view and by each
+     band of the formation view, so a component's tree looks exactly like the
+     tree you get by opening that component on its own -- which is the point.
+     `openMap` is passed in rather than read from state: each band keeps its own
+     folding, and a click must reach the band it happened in. */
+  function drawTreeInto(g, all, colX, maxw, qid, openMap) {
+    var gLinks = svgEl("g", {}), gOn = svgEl("g", {}), gNodes = svgEl("g", {});
+    all.forEach(function (p) {
+      if (!p.parent) return;
+      var a = p.parent, b = p;
+      var startX = a.sx + (a.data.more ? 0
+        : Math.min(estWidth(a.data.n) - 12, maxw[a.depth]));
+      if (startX >= b.sx - 6) startX = a.sx + 6;
+      var mid = startX + (b.sx - startX) * 0.5;
+      var kind = p.data.more ? K_INH : p.data.n.kind;
+      var on = !p.data.more && a.data.n.path && b.data.n.path;
+      var reach = p.data.more ? 0 : subtreeCount(p.data.n);
+      var wgt = Math.min(2.6, 0.85 + Math.log10(1 + reach) * 0.55);
+      (on ? gOn : gLinks).appendChild(svgEl("path", {
+        "class": "link" + (on ? " on" : "") + " k" + kind,
+        stroke: p.data.more ? "var(--wire)" : famColour(p.data.n),
+        "stroke-width": on ? Math.max(1.9, wgt) : wgt,
+        "stroke-opacity": on ? 1 : 0.45,
+        d: "M" + startX + "," + a.sy + "C" + mid + "," + a.sy +
+           " " + mid + "," + b.sy + " " + b.sx + "," + b.sy
+      }));
+    });
+    g.appendChild(gLinks);
+    g.appendChild(gOn);
+
+    all.forEach(function (p) {
+      if (p.data.more) {
+        var t = svgEl("text", { "class": "morerow", x: p.sx, y: p.sy });
+        t.textContent = "+ " + p.data.more + " more";
+        t.addEventListener("click", function () {
+          state.all[p.data.n.id] = true;
+          render();
+        });
+        g.appendChild(t);
+        return;
+      }
+      var n = p.data.n, isYou = n.id === qid, w = estWidth(n);
+      var selected = state.sel === n.id;
+      var hit = svgEl("rect", {
+        "class": "hit", x: p.sx - 8, y: p.sy - ROW / 2 + 2,
+        width: Math.max(40, w), height: ROW - 4
+      });
+      hit.addEventListener("click", function () {
+        state.sel = n.id;
+        if (n.children.length) openMap[n.id] = !openMap[n.id];
+        render();
+      });
+      gNodes.appendChild(hit);
+      gNodes.appendChild(svgEl("rect", {
+        "class": "halo" + (selected ? " sel" : ""),
+        x: p.sx - 8, y: p.sy - ROW / 2 + 2,
+        width: Math.max(40, w), height: ROW - 4, rx: 3
+      }));
+      var reach = subtreeCount(n), isOpenHere = !!openMap[n.id] && n.children.length > 0;
+      gNodes.appendChild(svgEl("circle", {
+        "class": "dot", cx: p.sx, cy: p.sy,
+        r: isYou ? DOT + 1.6 : Math.min(DOT + 2, DOT + Math.log10(1 + reach) * 0.7),
+        fill: n.children.length && !isOpenHere ? famColour(n) : "var(--canvas)",
+        stroke: n.path ? "var(--accent)" : famColour(n)
+      }));
+      var lw = labelW(n);
+      var t2 = svgEl("text", {
+        "class": "lbl" + (isRecon(n.id) ? " recon" : "") +
+                 (n.path ? " on" : "") + (isYou ? " you" : ""),
+        x: p.sx + 9, y: p.sy
+      });
+      t2.textContent = labelOf(n.id);
+      gNodes.appendChild(t2);
+      var s = svgEl("text", { "class": "sub", x: p.sx + 17 + lw, y: p.sy + 0.5 });
+      s.textContent = n.lang || n.code;
+      gNodes.appendChild(s);
+      if (n.children.length && !isOpenHere) {
+        var c = svgEl("text", {
+          "class": "more",
+          x: p.sx + 24 + lw + textW(n.lang || n.code, 5.5), y: p.sy + 0.5
+        });
+        c.textContent = "+" + reach;
+        gNodes.appendChild(c);
+      }
+    });
+    g.appendChild(gNodes);
   }
 
   function render() {
@@ -1622,6 +1736,7 @@
     tagFamilies(state.tree.tree);
     state.open = defaultOpen(state.tree.tree);
     state.all = {};
+    state.bandOpen = {};
     render();
 
     Array.prototype.forEach.call(document.querySelectorAll(".chip"), function (c) {
