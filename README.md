@@ -28,9 +28,9 @@ Whisky and water share a root. Grammar and carve share one too — `*gerbʰ-`,
 
 | | words | definitions | size | for |
 |---|---|---|---|---|
-| `index.html` | 1,250,000 | 815,421 | 45 MB | this site |
-| full | 2,851,910 | 1,975,299 | 106 MB | [Releases](../../releases) — offline use |
-| compact | 830,000 | proto-forms only | 16 MB | embedding where size is capped |
+| `index.html` | 2,000,000 | 1,375,461 | 77 MB | this site |
+| full | 3,103,066 | 2,092,281 | 128 MB | [Releases](../../releases) — offline use |
+| compact | 795,000 | proto-forms only | 16 MB | embedding where size is capped |
 
 ```sh
 python build/extract2.py                             # one pass over the 2.65 GB dump
