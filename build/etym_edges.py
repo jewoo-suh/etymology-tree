@@ -136,6 +136,44 @@ def parse_parts(name, args, own_lang):
     return out
 
 
+def parse_ety(args, own_lang):
+    """{{ety}} is the 'etymology tree' template. Argument 2 names the relation
+    (:af, :inh, :bor, :der) and arguments 3 onward are the terms:
+
+        {{ety|la|:af|mūniō<t:to fortify>|-tiō}}
+
+    Not reading it left Latin munitio with no ancestry whatever, though its page
+    says plainly that it is mūniō + -tiō. The same shape covers a great many
+    Latin and Greek entries. Returns (kind, [(lang, term), ...]).
+    """
+    rel = (args.get("2") or "").split("<")[0].strip().lstrip(":").strip()
+    kind = {"af": "form", "affix": "form", "inh": "inh", "bor": "bor",
+            "der": "der", "cal": "cal", "calque": "cal", "root": "root",
+            "lbor": "bor", "psm": "cal", "sl": "cal"}.get(rel)
+    if not kind:
+        return None, []
+    out, i = [], 3
+    while True:
+        v = args.get(str(i))
+        if v is None:
+            break
+        i += 1
+        if i > 10:
+            break
+        spec = v.split("<")[0].strip()
+        if not spec:
+            continue
+        # cross-language relations may qualify the term as "code:term"
+        if kind != "form" and ":" in spec:
+            lg, term = spec.split(":", 1)
+            lg, term = lg.strip(), clean_term(term)
+        else:
+            lg, term = own_lang, clean_term(spec)
+        if lg and term:
+            out.append((lg, term))
+    return kind, out
+
+
 def parse(name, args, own_lang):
     """Return (parent_lang, parent_term) or None."""
     if name == "etymon":
@@ -172,16 +210,22 @@ def main():
             child = "{}:{}".format(rec["c"], rec["w"].lstrip("*").strip())
             for t in rec["t"]:
                 name = t["n"]
-                kind = KIND.get(name)
-                if not kind:
-                    continue
-                seen_tmpl[name] += 1
                 args = t.get("a") or {}
-                if name in FORMATION:
-                    got = parse_parts(name, args, rec["c"])
+                if name == "ety":
+                    kind, got = parse_ety(args, rec["c"])
+                    if not kind:
+                        continue
+                    seen_tmpl[name] += 1
                 else:
-                    one = parse(name, args, rec["c"])
-                    got = [one] if one else []
+                    kind = KIND.get(name)
+                    if not kind:
+                        continue
+                    seen_tmpl[name] += 1
+                    if name in FORMATION:
+                        got = parse_parts(name, args, rec["c"])
+                    else:
+                        one = parse(name, args, rec["c"])
+                        got = [one] if one else []
                 # keep the most informative relation if several assert the pair
                 rank = {"inh": 5, "bor": 4, "cal": 4, "der": 3, "form": 2, "root": 0}
                 for lg, term in got:

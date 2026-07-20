@@ -25,6 +25,11 @@ WANTED = {
     "learned borrowing", "slbor", "semi-learned borrowing", "obor",
     "orthographic borrowing", "calque", "cal", "partial calque", "psm",
     "semantic loan", "sl", "root", "etymon", "uder",
+    # {{ety}} is Wiktionary's "etymology tree" template and carries the relation
+    # in its second argument (:af, :inh, :bor, :der). Missing it left Latin
+    # munitio with no ancestry at all, though the page states plainly that it is
+    # mūniō + -tiō -- and the same for a great many Latin and Greek entries.
+    "ety",
     # Word-formation: a word built inside its own language rather than handed
     # down from another. Skipping these left out 1,069,776 entries -- German
     # Antibabypille, and most of modern English, Finnish and Hungarian, which

@@ -159,6 +159,12 @@
   .route .step.recon { font-style: italic; }
   .route .step.root { color: var(--accent); }
   .route .step.you { font-weight: 600; color: var(--accent); }
+  .route .part {
+    font-family: var(--serif); font-size: .82em; line-height: 1.2;
+    background: transparent; border: 0; padding: .05rem .15rem;
+    color: var(--muted); cursor: pointer; align-self: center;
+  }
+  .route .part:hover { color: var(--accent); text-decoration: underline; }
   .legend h3 {
     font-family: var(--mono); font-size: var(--xs); font-weight: 600;
     letter-spacing: .1em; text-transform: uppercase; color: var(--faint);
@@ -815,7 +821,46 @@
       var anc = ancestorsVia(id, [1, 1, 1, 1]);
       route = longestRoute(top, id, [1, 1, 1, 1], anc.depth) || [top, id];
     }
-    return { q: id, root: top, tree: buildTree(top, route, true), chain: route };
+    var tree = buildTree(top, route, true);
+
+    /* The chain is worked out on the ancestor set; the tree is built downward
+       with shortcut edges removed. They can disagree by a step, and when they
+       did, marking the path by its position in the chain stopped dead at the
+       divergence -- father lit up as far as Middle English and simply stopped,
+       with the word itself left unopened somewhere below.
+       So take the path from the drawing: find the word, walk back up through the
+       tree that actually exists, and let that be the chain. Then the two cannot
+       disagree, because they are the same thing. */
+    var want = {};
+    route.forEach(function (x) { want[x] = 1; });
+    var drawn = pathInTree(tree, id, want);
+    if (drawn) {
+      drawn.forEach(function (nd) { nd.path = true; });
+      route = drawn.map(function (nd) { return nd.id; });
+    }
+    return { q: id, root: top, tree: tree, chain: route };
+  }
+
+  /* A word can sit in several places in a flattened DAG, so take the occurrence
+     that agrees with the lineage we worked out rather than whichever the walk
+     reaches first. Depth-first order alone put father under *fadrīnaz, the
+     branch for the verb 'to father', instead of the plain *fadēr line. */
+  function pathInTree(tree, id, want) {
+    var best = null, bestScore = -1;
+    (function walk(n, trail) {
+      var t = trail.concat([n]);
+      if (n.id === id) {
+        var score = 0;
+        for (var j = 0; j < t.length; j++) if (want[t[j].id]) score++;
+        if (score > bestScore || (score === bestScore && best && t.length < best.length)) {
+          bestScore = score;
+          best = t;
+        }
+        return;
+      }
+      for (var i = 0; i < n.children.length; i++) walk(n.children[i], t);
+    })(tree, []);
+    return best;
   }
 
   /* ---- search -------------------------------------------------------- */
@@ -1169,6 +1214,24 @@
       b.textContent = labelOf(step);
       b.addEventListener("click", function () { open(step); });
       route.appendChild(b);
+
+      /* Name the parts a step was built from, right in the chain. The lineage
+         cannot route through an affix, so teacher reads "teach → teacher" and
+         the -er that actually shapes the word appears nowhere. Say it here. */
+      var prev = i ? (T.chain || [])[i - 1] : -1;
+      var ps = UP[step] || [], ks = UPK[step] || [], parts = [];
+      for (var pi = 0; pi < ps.length && parts.length < 3; pi++) {
+        if (ks[pi] !== K_DER || code(ps[pi]) !== code(step) || ps[pi] === prev) continue;
+        parts.push(ps[pi]);
+      }
+      parts.forEach(function (o) {
+        var pb = el("button", "part");
+        pb.type = "button";
+        pb.textContent = "＋" + labelOf(o);
+        pb.title = langName(o) + (isAffix(o) ? " · affix" : " · component");
+        pb.addEventListener("click", function () { open(o); });
+        route.appendChild(pb);
+      });
     });
     if (state.focus !== null) {
       var back = el("button", "crumb", "↑ back to " + labelOf(T.tree.id));

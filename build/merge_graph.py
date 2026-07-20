@@ -6,6 +6,7 @@ language: the first misses every loanword, the second misses the long
 descendant chains that make cognates visible.
 """
 import collections
+import unicodedata
 import io
 import json
 import os
@@ -62,6 +63,47 @@ def main():
 
     print("\nnew nodes from templates: {:,}".format(added_nodes))
     print("merged: {:,} nodes, {:,} edges".format(len(nodes), len(merged)))
+
+    # Wiktionary page titles for Latin carry no macrons but template arguments
+    # do, so `munitio` cites `mūniō` while the entry itself is `munio`. That
+    # splits one word into two nodes and severs the chain: munitio reached a
+    # macronned phantom with no ancestry, when the real entry continues back to
+    # moene and Proto-Indo-European *mey-.
+    #
+    # Only phantoms are redirected -- nodes that never appeared as an entry of
+    # their own, existing solely because something pointed at them. A real entry
+    # is never merged away, so languages where diacritics distinguish words keep
+    # both.
+    def fold(s):
+        return "".join(ch for ch in unicodedata.normalize("NFD", s)
+                       if not unicodedata.combining(ch)).lower()
+
+    real = {}
+    for k, v in nodes.items():
+        if v.get("entry"):
+            real.setdefault((v.get("lang_code"), fold(v.get("word", ""))), k)
+    alias = {}
+    for k, v in nodes.items():
+        if v.get("entry"):
+            continue
+        tgt = real.get((v.get("lang_code"), fold(v.get("word", ""))))
+        if tgt and tgt != k:
+            alias[k] = tgt
+    print("diacritic phantoms redirected to their real entry: {:,}".format(len(alias)))
+
+    if alias:
+        remapped = {}
+        for (p, c), kind in merged.items():
+            p2, c2 = alias.get(p, p), alias.get(c, c)
+            if p2 == c2:
+                continue
+            cur = remapped.get((p2, c2))
+            if cur is None or rank[kind] > rank[cur]:
+                remapped[(p2, c2)] = kind
+        merged = remapped
+        for k in alias:
+            nodes.pop(k, None)
+        print("after redirect: {:,} nodes, {:,} edges".format(len(nodes), len(merged)))
 
     kinds = collections.Counter(merged.values())
     print("\n-- relations --")
