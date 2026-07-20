@@ -75,8 +75,16 @@ def main():
     # is never merged away, so languages where diacritics distinguish words keep
     # both.
     def fold(s):
+        """Diacritics only. Never case.
+
+        Lowercasing here merged Core -- the old European name for Korea, which
+        has no entry of its own -- into core, the middle of a thing. Korea then
+        descended from Latin cor, "heart", which is not merely wrong but
+        confidently wrong. Case distinguishes words in every language that has
+        it, so folding it away to match a macron is far too blunt an instrument.
+        """
         return "".join(ch for ch in unicodedata.normalize("NFD", s)
-                       if not unicodedata.combining(ch)).lower()
+                       if not unicodedata.combining(ch))
 
     real = {}
     for k, v in nodes.items():

@@ -80,12 +80,33 @@ See [RECON-FINDINGS.md](RECON-FINDINGS.md) for how the data was assessed, and
 
 ## Known limits
 
-- **Homographs merge.** Nodes are keyed by language plus spelling, so *school*
-  the institution and *school* of fish share one node. Fixing it means keying on
-  Wiktionary's `etymology_number`.
-- **Only lemmas.** A plural never finds its singular.
-- Surname, place-name and inflected-form entries are stripped (183,744 of them)
-  unless a real word descends from them.
+**Homographs merge, and this can produce chains that are confidently wrong.**
+Nodes are keyed by language plus spelling, so every sense of a spelling shares
+one node. Usually that is harmless. Sometimes it is not:
+
+> `Korea → 高麗 → kool → … → *ǵwelH-`
+
+Each edge there is real. Korea does come from 高麗 (Goryeo), and Taiwanese
+高麗菜 "cabbage" genuinely is borrowed from Dutch *kool*. But they are different
+senses of the same spelling, and merging them walks the chain out of a country
+and into a vegetable. The true line is 고구려 → 고려 → Cauli → Corea → Korea.
+
+Treat a chain as a claim about **spellings**, not about meanings. Where a step
+looks absurd, it usually is, and the detail rail lists every recorded parent so
+you can see which one the chain took. Fixing this properly means keying nodes on
+Wiktionary's `etymology_number`, which every template reference would then have
+to disambiguate.
+
+**Chains prefer depth over completeness.** *ontology* is shown as
+`*h₁sónts → *ehónts → ὤν → ontology`. Every step is recorded, but Latin
+*ontologia* — where the word was actually coined, around 1600 — is skipped,
+because it has no recorded ancestry of its own and the climb prefers the route
+that reaches a reconstructed form. It is listed under "Comes from" in the rail.
+
+**Only lemmas.** A plural never finds its singular.
+
+Surname, place-name and inflected-form entries are stripped (185,064 of them)
+unless a real word descends from them.
 
 ## Licence
 
