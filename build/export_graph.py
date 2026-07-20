@@ -26,7 +26,7 @@ import sys
 
 G = r"C:\Projects\etymology-tree-viz\data\graph"
 OUT = r"C:\Projects\etymology-tree-viz\web"
-NODE_TARGET = 830000   # tuned to land the bundled page under the 16 MB cap
+NODE_TARGET = 795000   # tuned to land the bundled page under the 16 MB cap
 STRUCT_SHARE = 0.78    # of that, the share reserved for words other than compound leaves
 LEAF_FLOOR = 40        # compounds every language keeps, however small it is
 GLOSS_MAX = 44

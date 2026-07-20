@@ -738,11 +738,14 @@
       if (from !== undefined) {
         var ps = UP[id] || [], ks = UPK[id] || [];
         for (var q = 0; q < ps.length; q++) {
-          if (ps[q] === from || ks[q] === K_ROOT || isAffix(ps[q])) continue;
+          if (ps[q] === from || ks[q] === K_ROOT) continue;
           /* Only components of a compound, meaning same-language word-formation.
              Taking every second parent was far too broad: father has seventeen
              Middle English spellings as parents, so the canvas filled with long
-             curves connecting variants of the same word to each other. */
+             curves connecting variants of the same word to each other.
+             Affixes belong here even though they are barred from the lineage:
+             -er is not where teacher came from, but it is certainly part of how
+             the word was made, and naming it explains the shape of the word. */
           if (ks[q] !== K_DER || code(ps[q]) !== code(id)) continue;
           others.push(ps[q]);
           if (others.length >= 2) break;
@@ -1064,7 +1067,7 @@
       if (p.data.more || !p.data.n.others.length) return;
       p.mergeNames = [];
       p.data.n.others.forEach(function (o) {
-        var src = placed[o];
+        var src = isAffix(o) ? null : placed[o];
         // a curve spanning half the canvas reads as noise, not as a connection
         var near = src && Math.abs(src.sy - p.sy) < 340;
         if (src && src !== p && src.sx < p.sx && near) {

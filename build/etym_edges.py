@@ -75,29 +75,64 @@ def is_affix(term):
         term.endswith("-") or term.endswith("−")
 
 
-def parse_parts(args, own_lang):
-    """Word-formation: every numbered argument from 2 on is a component, all in
-    the word's own language. Returns a list of (lang, term).
+def parse_parts(name, args, own_lang):
+    """Word-formation: the numbered arguments from 2 on are the parts a word was
+    built from, all in its own language. Returns a list of (lang, term).
 
-    Affixes are dropped. They are components, but they are not where a word came
-    from, and treating them as ancestors was ruinous: every -ing word became a
-    child of -ing, which has its own descent to Proto-Indo-European, so the
-    climb preferred it. 'sugar' traced through *-ō -> *-anaz -> -inn -> -en, and
-    'blackboard' through *-eh₂ rather than through black. They also dominated
-    the edge count, which crowded major languages out of the export entirely.
+    Affixes are kept, but normalised to carry their hyphen, and that matters
+    more than it looks. Wiktionary is inconsistent: {{affix|en|teach|-er}} spells
+    the suffix with its hyphen, while {{suffix|en|teach|er}} leaves it off and
+    lets the template add it. So a hyphen test caught some affixes and missed
+    others -- which is why *wódr̥ ended up hanging off *r̥, the heteroclitic
+    r-stem ending, dressed up as an ordinary word.
+
+    Consistent hyphens let the front end tell an ending from a word, so an affix
+    can be named as a component ("teacher = teach + -er") while still being
+    barred from the lineage. It must stay barred: every -ing word being a child
+    of -ing, which has its own descent to Proto-Indo-European, is what made
+    'sugar' trace through *-ō -> *-anaz -> -inn.
     """
-    out = []
+    vals = []
     i = 2
     while True:
         v = args.get(str(i))
         if v is None:
             break
         t = clean_term(v)
-        if t and not is_affix(t):
-            out.append((own_lang, t))
+        if t:
+            vals.append(t)
         i += 1
         if i > 9:
             break
+    if not vals:
+        return []
+
+    def as_suffix(t):
+        return t if t.startswith(("-", "−")) else "-" + t
+
+    def as_prefix(t):
+        return t if t.endswith(("-", "−")) else t + "-"
+
+    out = []
+    if name in ("suffix", "suf"):
+        # first argument is the base word, everything after it is a suffix
+        for j, t in enumerate(vals):
+            out.append((own_lang, t if j == 0 else as_suffix(t)))
+    elif name in ("prefix", "pre"):
+        # everything but the last is a prefix
+        for j, t in enumerate(vals):
+            out.append((own_lang, as_prefix(t) if j < len(vals) - 1 else t))
+    elif name in ("confix", "con"):
+        for j, t in enumerate(vals):
+            if j == 0:
+                out.append((own_lang, as_prefix(t)))
+            elif j == len(vals) - 1:
+                out.append((own_lang, as_suffix(t)))
+            else:
+                out.append((own_lang, t))
+    else:
+        # af / affix / compound / blend already carry their own hyphens
+        out = [(own_lang, t) for t in vals]
     return out
 
 
@@ -143,7 +178,7 @@ def main():
                 seen_tmpl[name] += 1
                 args = t.get("a") or {}
                 if name in FORMATION:
-                    got = parse_parts(args, rec["c"])
+                    got = parse_parts(name, args, rec["c"])
                 else:
                     one = parse(name, args, rec["c"])
                     got = [one] if one else []
