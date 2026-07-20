@@ -418,8 +418,10 @@
   var K_INH = 0, K_BOR = 1, K_ROOT = 2, K_DER = 3;
   var UP = new Array(N), DOWN = new Array(N);
   var UPK = new Array(N), DOWNK = new Array(N);
+  var PRIM = new Set();
   (function () {
     var bin = atob(G.kinds);
+    var pbin = G.prim ? atob(G.prim) : null;
     var flat = 0, runs = G.adj.split(";");
     for (var i = 0; i < runs.length; i++) {
       var s = runs[i], gt = s.indexOf(">");
@@ -433,6 +435,7 @@
         ka[j] = k;
         (UP[c] || (UP[c] = [])).push(p);
         (UPK[c] || (UPK[c] = [])).push(k);
+        if (pbin && (pbin.charCodeAt(flat >> 3) >> (flat & 7)) & 1) PRIM.add(p * N + c);
         flat++;
       }
       DOWN[p] = arr;
@@ -588,7 +591,8 @@
            through *nahtāną "to become night" purely because the verb detour
            was longer. Inherited and borrowed steps are free, derivational
            ones cost, and length only breaks ties. */
-        var cost = sub.cost + (kk[i] === K_DER ? 1 : kk[i] === K_ROOT ? 2 : 0);
+        var cost = sub.cost + (kk[i] === K_DER ? 1 : kk[i] === K_ROOT ? 2 : 0) +
+                   (code(cur) === code(c) ? 1 : 0);
         if (!found || cost < found.cost ||
             (cost === found.cost && sub.route.length + 1 > found.route.length)) {
           found = { cost: cost, route: [cur].concat(sub.route) };
@@ -665,7 +669,60 @@
     return route;
   }
 
+  /* Follow the word's own pages, link by link. Each entry's first citation --
+     "From Middle English tothe, from Old English tōþ, ..." -- is its primary
+     parent, marked at build time. No path search, no gluing between pages: the
+     chain is what the pages themselves say, hopped the way a reader follows
+     them. Derivational side-forms such as tothen "to teethe" cannot pad the
+     line, because no page cites them as where tooth came from. */
+  function pageChain(id) {
+    var route = [id], cur = id, seen = {};
+    seen[id] = 1;
+    for (var step = 0; step < 30; step++) {
+      var ps = UP[cur] || [], next = -1;
+      for (var j = 0; j < ps.length; j++) {
+        var q = ps[j];
+        if (!PRIM.has(q * N + cur) || seen[q] || isAffix(q)) continue;
+        next = q;
+        break;
+      }
+      if (next < 0) break;
+      seen[next] = 1;
+      route.unshift(next);
+      cur = next;
+    }
+    return route;
+  }
+
   function climb(id) {
+    var walk = pageChain(id);
+    if (walk.length > 1) {
+      // the pages carried us as far as they cite; the waves finish the top
+      var ext = climbWaves(walk[0]);
+      if (ext && ext.route.length > 1) {
+        walk = ext.route.slice(0, -1).concat(walk);
+      } else {
+        /* A page can cite a spelling that has no entry -- niht names PWGmc
+           *nahti, sugre's line runs through Old Italian zucchero -- and the
+           walk stalls on the phantom. The generations below still know their
+           ancestry through other recorded edges, so let the waves resume from
+           a lower step and keep the walked tail. */
+        var rescued = false;
+        for (var i = 1; i < walk.length - 1 && i <= 4 && !rescued; i++) {
+          var e2 = climbWaves(walk[i]);
+          if (e2 && e2.route.length > i + 1) {
+            walk = e2.route.slice(0, -1).concat(walk.slice(i));
+            rescued = true;
+          }
+        }
+        if (!rescued) walk = extendUp(walk);
+      }
+      return { root: walk[0], route: walk };
+    }
+    return climbWaves(id);
+  }
+
+  function climbWaves(id) {
     for (var w = 0; w < WAVES.length; w++) {
       var got = passWith(id, WAVES[w], false);
       if (got) {

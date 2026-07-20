@@ -82,6 +82,14 @@ See [RECON-FINDINGS.md](RECON-FINDINGS.md) for how the data was assessed, and
 
 ## Known limits
 
+**Chains follow the pages, not the graph.** Every entry's first citation —
+"From Middle English *tothe*, from Old English *tōþ*, …" — is marked as its
+primary parent at build time, and the displayed chain walks these page links
+the way a reader follows Wiktionary, hop by hop. No path search, no inference
+between pages: gluing between pages is where every invented lineage came from.
+When a page cites a spelling that has no entry, the walk stalls honestly and
+the search machinery may resume from a lower step it can verify.
+
 **Every cross-reference is resolved with evidence, and demoted without it.**
 A reference by spelling must earn its landing: a unique sense, a sense-id, or
 gloss overlap with the context around the edge. A landing with no evidence is

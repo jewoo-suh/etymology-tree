@@ -102,8 +102,13 @@ def main():
     # comparing the two languages -- word-formation is always same-language.
     KIND2 = {"inh": 0, "bor": 1, "cal": 1, "root": 2, "der": 3, "form": 3}
 
+    # a "P" prefix marks the entry's own first page citation: its primary parent
+    def dekind(k):
+        return (k[1:], True) if k.startswith("P") else (k, False)
+
+    edges = [[p, c] + list(dekind(k)) for p, c, k in edges]
     up = collections.defaultdict(list)
-    for p, c, _k in edges:
+    for p, c, _k, _pr in edges:
         up[c].append(p)
 
     # Strip entries nobody comes here for. Wiktionary indexes every surname,
@@ -134,7 +139,7 @@ def main():
     JUNK = re.compile("(?:" + ANYWHERE + r")|^(?:" + ATSTART + ")", re.I)
 
     down_all = collections.defaultdict(list)
-    for p, c, _k in edges:
+    for p, c, _k, _pr in edges:
         down_all[p].append(c)
     junk = set()
     for k, v in nodes.items():
@@ -149,7 +154,7 @@ def main():
         nodes.pop(k, None)
     edges = [e for e in edges if e[0] not in junk and e[1] not in junk]
     up = collections.defaultdict(list)
-    for p, c, _k in edges:
+    for p, c, _k, _pr in edges:
         up[c].append(p)
     print("nodes now {:,}, edges {:,}".format(len(nodes), len(edges)))
 
@@ -176,7 +181,7 @@ def main():
     # Welsh.
     down_deg = collections.Counter()
     nonform_up = collections.Counter()
-    for p, c, k in edges:
+    for p, c, k, _pr in edges:
         down_deg[p] += 1
         if k != "form":
             nonform_up[c] += 1
@@ -337,9 +342,9 @@ def main():
 
     adj = collections.defaultdict(list)
     n_edges = 0
-    for p, c, k in edges:
+    for p, c, k, pr in edges:
         if p in ids and c in ids:
-            adj[ids[p]].append((ids[c], KIND2[k]))
+            adj[ids[p]].append((ids[c], KIND2[k], 1 if pr else 0))
             n_edges += 1
 
     # two bits per edge over the flattened child order: inherited / borrowed /
@@ -347,14 +352,20 @@ def main():
     # several times as much across 2.4M edges.
     chunks, flat = [], 0
     kind_bits = bytearray((n_edges + 3) // 4)
+    prim_bits = bytearray((n_edges + 7) // 8)
     kcount = collections.Counter()
+    n_prim = 0
     for p in sorted(adj):
         cs = sorted(adj[p])
-        chunks.append(b36(p) + ">" + ",".join(b36(c) for c, _ in cs))
-        for c, k in cs:
+        chunks.append(b36(p) + ">" + ",".join(b36(c) for c, _, _pr in cs))
+        for c, k, pr in cs:
             kind_bits[flat >> 2] |= (k & 3) << ((flat & 3) * 2)
+            if pr:
+                prim_bits[flat >> 3] |= 1 << (flat & 7)
+                n_prim += 1
             kcount[k] += 1
             flat += 1
+    print("primary page-links shipped: {:,}".format(n_prim))
 
     out = {
         "codes": codes,
@@ -365,6 +376,7 @@ def main():
         "gtexts": "\n".join(gtexts),
         "adj": ";".join(chunks),
         "kinds": base64.b64encode(bytes(kind_bits)).decode("ascii"),
+        "prim": base64.b64encode(bytes(prim_bits)).decode("ascii"),
     }
 
     dest = os.path.join(OUT, "graph-{}.json".format(TAG) if TAG else "graph.json")

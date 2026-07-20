@@ -387,6 +387,12 @@ def main():
     edges = {}
     node_word = {}
     node_entry = set()
+    # Each entry's first surviving lineage citation, in the order the page
+    # wrote them, names the nearest ancestor first. Chains follow these page
+    # links verbatim instead of re-deriving a path through the glued graph --
+    # gluing between pages is where every invented lineage came from.
+    primary = set()
+    primary_of = set()
 
     def note_node(key, word, entry):
         if key not in node_word:
@@ -441,6 +447,7 @@ def main():
             akey, ask, an = anchored_key(e["c"], e["w"], norm_n(e.get("n", 0)))
             note_node(akey, e["w"], True)
             ctx = tokens(glosses.get(ask + SEP + str(an), "")) | wtok(e["w"])
+            have_primary = akey in primary_of
             for kind, lg, term, gh, ih in parse_templates(e.get("t") or [], e["c"]):
                 pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx)
                 if not trusted and kind in ("inh", "bor", "der", "cal"):
@@ -464,6 +471,11 @@ def main():
                     continue
                 note_node(pkey, term.lstrip("*").strip(), entry)
                 add_edge(pkey, akey, kind)
+                if (not have_primary and kind != "root" and pkey != akey
+                        and not is_affix_term(term)):
+                    primary.add((pkey, akey))
+                    primary_of.add(akey)
+                    have_primary = True
             if e.get("d"):
                 walk_desc(e["d"], akey, ctx)
             done += 1
@@ -532,14 +544,18 @@ def main():
         len(alias), skipped), flush=True)
     if alias:
         remapped = {}
+        reprim = set()
         for (p, c), kind in edges.items():
             p2, c2 = alias.get(p, p), alias.get(c, c)
             if p2 == c2:
                 continue
+            if (p, c) in primary:
+                reprim.add((p2, c2))
             cur = remapped.get((p2, c2))
             if cur is None or RANK[kind] > RANK[cur]:
                 remapped[(p2, c2)] = kind
         edges = remapped
+        primary = reprim
         for k in alias:
             node_word.pop(k, None)
 
@@ -560,8 +576,11 @@ def main():
 
     with io.open(os.path.join(OUT, "nodes2.json"), "w", encoding="utf-8") as fh:
         json.dump(nodes_out, fh, ensure_ascii=False)
+    n_prim = sum(1 for pc in edges if pc in primary)
+    print("primary page-links: {:,}".format(n_prim))
     with io.open(os.path.join(OUT, "edges2.json"), "w", encoding="utf-8") as fh:
-        json.dump([[p, c, k] for (p, c), k in sorted(edges.items())],
+        json.dump([[p, c, ("P" + k) if (p, c) in primary else k]
+                   for (p, c), k in sorted(edges.items())],
                   fh, ensure_ascii=False)
     up = collections.Counter()
     for (p, c) in edges:
