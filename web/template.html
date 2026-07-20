@@ -204,17 +204,17 @@
     fill: none; stroke: var(--accent); stroke-width: 1.2;
     stroke-dasharray: 2 3; stroke-opacity: .75;
   }
-  .mergename {
-    font-family: var(--serif); font-size: 11.5px; fill: var(--accent);
-    dominant-baseline: middle; cursor: pointer; fill-opacity: .85;
+  .lbl.ghost {
+    font-size: 12.5px; fill: var(--accent); fill-opacity: .9; cursor: pointer;
   }
-  .mergename:hover { text-decoration: underline; fill-opacity: 1; }
+  .lbl.ghost:hover { text-decoration: underline; fill-opacity: 1; }
+  .ghostdot { stroke-dasharray: 1.5 1.5; }
   .dot { stroke-width: 1.4; }
 
   /* Links have to cross the gap between columns, which is exactly where labels
      sit. Painting a canvas-coloured stroke under each glyph keeps the word
      readable wherever a branch runs behind it. */
-  .lbl, .sub, .more, .morerow, .mergename {
+  .lbl, .sub, .more, .morerow {
     paint-order: stroke fill;
     stroke: var(--canvas); stroke-width: 3.5px; stroke-linejoin: round;
   }
@@ -1005,20 +1005,26 @@
   }
   function labelW(n) { return textW(labelOf(n.id), charW(n)); }
   function estWidth(n) {
-    var extra = 0;
-    if (n.others && n.others.length) {
-      // capped: one long component name should not stretch a whole column
-      extra = Math.min(96, 18 + textW(
-        n.others.map(function (o) { return WORDS[o]; }).join(" + "), 6.6));
-    }
     return labelW(n) + textW(n.lang || n.code, 5.5) + 26 +
-           (n.children.length && !isOpen(n) ? 30 : 0) + extra;
+           (n.children.length && !isOpen(n) ? 30 : 0);
   }
+  /* Components get their own row and their own node, placed one column back so
+     they run alongside the lineage and converge into the word they helped make.
+     teacher then reads as two strands meeting -- teach coming down the line,
+     -er arriving from the side -- which is what actually happened, and which a
+     label reading "+er" could only assert. The component is drawn but never
+     expanded: -er has thousands of children and belongs to none of them. */
   function visibleHierarchy(root) {
     return (function conv(n) {
       var o = { n: n, more: 0 };
       if (isOpen(n)) {
-        o.kids = shownChildren(n).map(conv);
+        o.kids = [];
+        shownChildren(n).forEach(function (c) {
+          (c.others || []).forEach(function (g) {
+            o.kids.push({ n: c, more: 0, ghost: g });
+          });
+          o.kids.push(conv(c));
+        });
         var hid = hiddenCount(n);
         if (hid > 0) o.kids.push({ n: n, more: hid });
       }
@@ -1040,6 +1046,14 @@
 
     var maxw = {};
     all.forEach(function (p) {
+      if (p.data.ghost !== undefined) {
+        var gd = Math.max(0, p.depth - 1);
+        // the component is drawn part-way into the gap, so the column before it
+        // must be wide enough to hold that offset plus the label itself
+        maxw[gd] = Math.max(maxw[gd] || 0,
+          (textW(labelOf(p.data.ghost), 7.2) + 62) / 0.58);
+        return;
+      }
       var w = p.data.more ? 118 : estWidth(p.data.n);
       maxw[p.depth] = Math.max(maxw[p.depth] || 0, w);
     });
@@ -1048,7 +1062,17 @@
     depths.forEach(function (dp) { colX[dp] = acc; acc += maxw[dp] + GAP; });
 
     var width = acc + PAD, height = (maxB - minB) + PAD * 2;
-    all.forEach(function (p) { p.sy = p.x - minB + PAD; p.sx = colX[p.depth]; });
+    all.forEach(function (p) {
+      p.sy = p.x - minB + PAD;
+      if (p.data.ghost === undefined) { p.sx = colX[p.depth]; return; }
+      /* Components sit in the gap between columns rather than in the parent's
+         column proper. A parent is placed at the midpoint of its children, so
+         dropping a component into the same column risks landing on top of it;
+         the gap is empty by construction, and the word still reads as arriving
+         from the side. */
+      var back = colX[Math.max(0, p.depth - 1)], here = colX[p.depth];
+      p.sx = back + (here - back) * 0.42;
+    });
 
     var svg = document.getElementById("svg");
     svg.textContent = "";
@@ -1076,7 +1100,7 @@
        how much hangs off the branch, colour marks the family. */
     var gLinks = svgEl("g", {}), gOn = svgEl("g", {});
     all.forEach(function (p) {
-      if (!p.parent) return;
+      if (!p.parent || p.data.ghost !== undefined) return;
       var a = p.parent, b = p;
       var startX = a.sx + (a.data.more ? 0 : Math.min(estWidth(a.data.n) - 12, maxw[a.depth]));
       if (startX >= b.sx - 6) startX = a.sx + 6;
@@ -1100,38 +1124,51 @@
     stage.appendChild(gLinks);
     stage.appendChild(gOn);
 
-    /* Second parents. Where the other half of a compound is already on screen,
-       join it up so the two branches visibly converge; where it is not, name it
-       beside the word so at least you know what merged. */
-    var placed = {};
+    /* Each component has a row and a node of its own, one column back, and a
+       curve running from it into the word it helped make. Two strands meeting,
+       which is what actually happened -- a label reading "+er" could only
+       assert it. */
+    var target = new Map();
     all.forEach(function (p) {
-      if (!p.data.more && placed[p.data.n.id] === undefined) placed[p.data.n.id] = p;
+      if (p.data.ghost === undefined && !p.data.more) target.set(p.data.n, p);
     });
     var gMerge = svgEl("g", {});
     all.forEach(function (p) {
-      if (p.data.more || !p.data.n.others.length) return;
-      p.mergeNames = [];
-      p.data.n.others.forEach(function (o) {
-        var src = isAffix(o) ? null : placed[o];
-        // a curve spanning half the canvas reads as noise, not as a connection
-        var near = src && Math.abs(src.sy - p.sy) < 340;
-        if (src && src !== p && src.sx < p.sx && near) {
-          var midY = (src.sy + p.sy) / 2 + (p.sy > src.sy ? -14 : 14);
-          gMerge.appendChild(svgEl("path", {
-            "class": "merge",
-            d: "M" + (src.sx + 4) + "," + src.sy +
-               "Q" + ((src.sx + p.sx) / 2) + "," + midY +
-               " " + (p.sx - 3) + "," + p.sy
-          }));
-        } else {
-          p.mergeNames.push(o);
-        }
-      });
+      if (p.data.ghost === undefined) return;
+      var dst = target.get(p.data.n);
+      if (!dst) return;
+      var mx = (p.sx + dst.sx) / 2;
+      gMerge.appendChild(svgEl("path", {
+        "class": "merge",
+        d: "M" + (p.sx + 5) + "," + p.sy +
+           "C" + mx + "," + p.sy + " " + mx + "," + dst.sy +
+           " " + (dst.sx - 3) + "," + dst.sy
+      }));
     });
     stage.appendChild(gMerge);
 
     var gNodes = svgEl("g", {});
     all.forEach(function (p) {
+      if (p.data.ghost !== undefined) {
+        var gid = p.data.ghost;
+        gNodes.appendChild(svgEl("circle", {
+          "class": "dot ghostdot", cx: p.sx, cy: p.sy, r: 2.6,
+          fill: "var(--canvas)", stroke: "var(--accent)"
+        }));
+        var gl = svgEl("text", {
+          "class": "lbl ghost" + (isRecon(gid) ? " recon" : ""),
+          x: p.sx + 8, y: p.sy
+        });
+        gl.textContent = labelOf(gid);
+        gl.addEventListener("click", function () { open(gid); });
+        gNodes.appendChild(gl);
+        var gsub = svgEl("text", {
+          "class": "sub", x: p.sx + 14 + textW(labelOf(gid), 7.2), y: p.sy + 0.5
+        });
+        gsub.textContent = isAffix(gid) ? "affix" : langName(gid);
+        gNodes.appendChild(gsub);
+        return;
+      }
       if (p.data.more) {
         var t = svgEl("text", { "class": "morerow", x: p.sx, y: p.sy });
         t.textContent = "+ " + p.data.more + " more";
@@ -1185,16 +1222,7 @@
         gNodes.appendChild(c);
         tail += textW("+" + reach, 6.4) + 10;
       }
-      // the other half of a compound, when it is not itself on screen
-      if (p.mergeNames && p.mergeNames.length) {
-        var mt = svgEl("text", { "class": "mergename", x: tail, y: p.sy + 0.5 });
-        mt.textContent = "＋ " + p.mergeNames.map(function (o) { return WORDS[o]; }).join(" ＋ ");
-        mt.addEventListener("click", function (ev) {
-          ev.stopPropagation();
-          open(p.mergeNames[0]);
-        });
-        gNodes.appendChild(mt);
-      }
+
     });
     stage.appendChild(gNodes);
 
