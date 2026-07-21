@@ -50,6 +50,7 @@ const TESTS = [
   { w: 'en:whisky', must: ['uisge|uisce'], banL: [], banG: [] },
   { w: 'en:name', must: ['h₁nómn̥|nama'], banL: [], banG: [] },
   { w: 'en:salt', must: ['salt'], banL: [], banG: [] },
+  { w: 'en:communism', must: ['communisme', 'communis'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

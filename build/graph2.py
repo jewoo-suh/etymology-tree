@@ -155,6 +155,11 @@ def parse_templates(tmpls, own_lang):
             continue
 
         if name == "etymon":
+            # the second argument states the relation (:bor, :inh, :der);
+            # flattening everything to der lost "borrowed from French"
+            rel = (args.get("2") or "").split("<")[0].strip().lstrip(":")
+            ekind = {"inh": "inh", "bor": "bor", "der": "der", "af": "form",
+                     "cal": "cal", "lbor": "bor", "from": "der"}.get(rel, "der")
             raw = args.get("3") or ""
             core, mods = split_mods(raw)
             if ":" not in core:
@@ -165,7 +170,7 @@ def parse_templates(tmpls, own_lang):
             if "id" in mods:
                 ih.add(mods["id"])
             if lg.strip() and term:
-                out.append(("der", lg.strip(), term,
+                out.append((ekind, lg.strip(), term,
                             base_gloss | tokens(mods.get("t", "")), ih))
             continue
 
@@ -341,9 +346,28 @@ def main():
         want_trust = gloss_hints | ctx
         want_sel = want_trust | own
 
+        def prefix5(a):
+            """A long shared prefix between the target's own spelling and any
+            context word is evidence of the same lexeme: communisme earns the
+            trust of communism through nine shared letters, where the gloss
+            comparison ("any collectivism" vs a truncated ideology gloss) sees
+            nothing. None of the known bridges come close -- ster/star share
+            two letters, dag/day two, senn/sunne one."""
+            for t in want_trust:
+                n2 = 0
+                m = min(len(a), len(t))
+                while n2 < m and a[n2] == t[n2]:
+                    n2 += 1
+                if n2 >= 5:
+                    return True
+            return False
+
+        own_fold = "".join(ch for ch in unicodedata.normalize("NFD", term)
+                           if not unicodedata.combining(ch)).lower()
+
         def trust_of(n):
             g = glosses.get(sk + SEP + str(n), "")
-            return (not g) or (not want_trust) or bool(tokens(g) & want_trust)
+            return (not g) or (not want_trust) or bool(tokens(g) & want_trust)                 or prefix5(own_fold)
 
         if len(ns) == 1:
             trusted = trust_of(ns[0])
