@@ -86,6 +86,10 @@ const TESTS = [
   { w: 'en:church', must: ['κυριακόν|kirikā'], banL: [], banG: [] },
   { w: 'en:devil', must: ['διάβολος|diabolus'], banL: [], banG: [] },
   { w: 'en:cloud', must: ['clud|klūtaz'], banL: [], banG: [] },
+  { w: 'en:cherry', must: ['chery|cherise'], banL: [], banG: [] },
+  { w: 'en:bishop', must: ['ἐπίσκοπος|episcopus'], banL: [], banG: [] },
+  { w: 'en:bride', must: ['brūdiz|bryd'], banL: [], banG: [] },
+  { w: 'en:pepper', must: ['πέπερι|piper'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

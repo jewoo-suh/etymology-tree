@@ -572,7 +572,10 @@ def main():
                 m = min(len(a), len(t))
                 while n2 < m and a[n2] == t[n2]:
                     n2 += 1
-                if n2 >= 5:
+                if n2 >= 4:
+                    # chery/cherry share four letters; no known fiction
+                    # pair (dag/day, ster/star, mone/moon) shares more
+                    # than three
                     return True
             return False
 
@@ -864,7 +867,11 @@ def main():
             if not m_a:
                 continue
             tail = m_a.group(1).strip()
-            if not tail or len(tail.split()) > 3 or defold(tail) == defold(w_a):
+            if not tail or len(tail.split()) > 3:
+                continue
+            if strip_marks(tail) == strip_marks(w_a):
+                # a true self-reference; but Kaiser/kaiser differ by case
+                # and that alternative-form link is real
                 continue
             vkey = kf(sk_a, n_a, ns_a)
             if vkey not in node_word:
