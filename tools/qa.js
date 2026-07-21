@@ -54,6 +54,9 @@ const TESTS = [
   { w: 'en:bear', must: ['bera'], banL: [], banG: ['pierce'] },
   { w: 'en:avocado', must: ['ahuacatl'], banL: ['ahuat', 'ahuacat'], banG: ['oak', 'acorn'] },
   { w: 'en:penguin', must: ['kʷennom'], banL: [], banG: [] },
+  { w: 'en:robot', must: ['robota'], banL: [], banG: [] },
+  { w: 'en:orange', must: ['نارنج'], banL: [], banG: [] },
+  { w: 'en:ketchup', must: ['膎汁'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------
@@ -150,7 +153,7 @@ function ancestorsVia(id, allow) {
     for (let j = 0; j < ps.length; j++) {
       if (!allow[ks[j]]) continue;
       const p = ps[j];
-      if (isAffix(p) || depth[p] !== undefined || !primOK(p, cur)) continue;
+      if (isAffix(p) || depth[p] !== undefined || !primOK(p, cur, ks[j])) continue;
       depth[p] = depth[cur] + 1; parentOf[p] = cur; q.push(p);
     }
   }
@@ -168,7 +171,7 @@ function bestRoute(root, id, allow, inSet) {
     for (let i = 0; i < ks.length; i++) {
       const c = ks[i];
       if (!allow[kk[i]] || inSet[c] === undefined || isAffix(c) ||
-          !primOK(cur, c)) continue;
+          !primOK(cur, c, kk[i])) continue;
       const s2 = best(c);
       if (!s2) continue;
       const cost = s2.cost + (kk[i] === 3 ? 1 : kk[i] === 2 ? 2 : 0) +
@@ -195,7 +198,7 @@ function topmost(cands, allow) {
       for (let j = 0; j < ps.length; j++) {
         if (!allow[ks[j]]) continue;
         const p = ps[j];
-        if (isAffix(p) || seen[p] || !primOK(p, cur)) continue;
+        if (isAffix(p) || seen[p] || !primOK(p, cur, ks[j])) continue;
         seen[p] = 1; q.push(p);
         if (score[p] !== undefined) score[p]++;
       }
@@ -213,7 +216,7 @@ function extendUp(route) {
     let best = -1, bn = -1;
     for (const p of ps) {
       if (seen[p] || isAffix(p) || !isRecon(p) || !isBare(p) ||
-          !primOK(p, top)) continue;
+          !primOK(p, top, kindNum(p, top))) continue;
       const n = reachCount(p);
       if (n > bn) { bn = n; best = p; }
     }
@@ -265,12 +268,19 @@ function climbWaves(id) {
    that way: es:aguacate cites Classical Nahuatl ahuacatl, and a stray
    descendants edge from Pipil ahuacat (ahuat "oak" + -cat on its own page)
    must not carry the climb into the oak lineage. */
-function primOK(par, child) {
+function primOK(par, child, k) {
   const pp = PRIMPAR[child];
   if (!pp) return true;
   if (pp.indexOf(par) > -1) return true;
-  // a dead-end primary (phantom with no parents) releases the other parents
-  return !pp.some(x => (UP[x] || []).length);
+  // a dead-end primary releases the other parents -- lineage ones only,
+  // never formation parts (kind 3)
+  if (pp.some(x => (UP[x] || []).length)) return false;
+  return k !== 3;
+}
+function kindNum(p, c) {
+  const a = DOWN[p] || [], k = DOWNK[p] || [];
+  for (let i = 0; i < a.length; i++) if (a[i] === c) return k[i];
+  return 0;
 }
 function pageChain(id) {
   const route = [id], seen = { [id]: 1 };
@@ -389,9 +399,10 @@ function climb(id) {
     if (ext && ext.route.length > 1) walk = ext.route.slice(0, -1).concat(walk);
     else {
       let rescued = false;
-      for (let i = 1; i < walk.length - 1 && i <= 4 && !rescued; i++) {
+      for (let i = 1; i < walk.length && i <= 4 && !rescued; i++) {
         const e2 = climbWaves(walk[i]);
-        if (e2 && e2.route.length > i + 1) {
+        if (e2 && e2.route.length > i + 1 &&
+            kindNum(e2.route[e2.route.length - 2], walk[i]) !== 2) {
           walk = e2.route.slice(0, -1).concat(walk.slice(i));
           rescued = true;
         }

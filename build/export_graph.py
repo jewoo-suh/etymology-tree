@@ -300,6 +300,27 @@ def main():
                 added += 1
     print("compound pass: {:,} leaves added across {} languages".format(
         added, sum(1 for v in pool.values() if v)))
+
+    # The displayed chain follows primary page-links; a primary parent
+    # sliced out of the build silently reroutes the chain (la-new:ontologia
+    # once fell out and ontology re-grew its Greek shortcut). Keep every
+    # kept word's primary ancestors, all the way up.
+    prim_up = collections.defaultdict(list)
+    for p, c, _k, pr, _un in edges:
+        if pr:
+            prim_up[c].append(p)
+    frontier = list(keep)
+    grew = 0
+    while frontier:
+        nxt = []
+        for k in frontier:
+            for p in prim_up.get(k, ()):
+                if p not in keep:
+                    keep.add(p)
+                    nxt.append(p)
+                    grew += 1
+        frontier = nxt
+    print("primary-chain closure: +{:,}".format(grew))
     print("nodes total: {:,}".format(len(keep)))
 
     # A slice must not present only the wrong homograph: if any sense of a

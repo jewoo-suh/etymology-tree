@@ -82,7 +82,7 @@ def own_etymon_ids(tmpls):
         if t.get("n") != "etymon":
             continue
         a = t.get("a") or {}
-        if a.get("id") and not a.get("3"):
+        if a.get("id"):
             ids.add(a["id"])
     return ids
 
@@ -107,6 +107,12 @@ def split_mods(raw):
     return raw.split("<")[0], mods
 
 
+def defold(s2):
+    """Diacritic-blind lowercase, for matching parts against their word."""
+    return "".join(ch for ch in unicodedata.normalize("NFD", s2)
+                   if not unicodedata.combining(ch)).lower()
+
+
 def clean_term(t):
     if not t:
         return ""
@@ -123,7 +129,7 @@ def is_affix_term(t):
     return t.startswith(("-", "−")) or t.endswith(("-", "−"))
 
 
-def parse_templates(tmpls, own_lang):
+def parse_templates(tmpls, own_lang, own_word=""):
     """Yield (kind, lang, term, gloss_hints:set, id_hints:set, uncertain)."""
     out = []
     for t in tmpls:
@@ -171,24 +177,71 @@ def parse_templates(tmpls, own_lang):
             continue
 
         if name == "etymon":
-            # the second argument states the relation (:bor, :inh, :der);
-            # flattening everything to der lost "borrowed from French"
-            rel = (args.get("2") or "").split("<")[0].strip().lstrip(":")
-            ekind = {"inh": "inh", "bor": "bor", "der": "der", "af": "form",
-                     "cal": "cal", "lbor": "bor", "from": "der"}.get(rel, "der")
-            raw = args.get("3") or ""
-            core, mods = split_mods(raw)
-            if ":" not in core:
-                continue
-            lg, term = core.split(":", 1)
-            term = clean_term(term)
-            ih = set(base_ids)
-            if "id" in mods:
-                ih.add(mods["id"])
-            if lg.strip() and term:
-                out.append((ekind, lg.strip(), term,
-                            base_gloss | tokens(mods.get("t", "")), ih,
-                            bool(mods.get("unc"))))
+            # Positional args from 2 up hold groups of [:rel, term, term...];
+            # a group with no leading :rel is derivation, and a bare term
+            # (no "lang:" prefix) belongs to the entry's own language --
+            # {{etymon|cs|id=Q11012|robota}} is how robot cites robota. For
+            # :af the terms are the parts a word was built from, all real;
+            # for any other relation the extra terms are rival theories, so
+            # only the first is the page's citation.
+            RELS = {"inh": "inh", "bor": "bor", "der": "der", "af": "form",
+                    "cal": "cal", "calq": "cal", "calque": "cal",
+                    "lbor": "bor", "psm": "cal", "sl": "cal", "from": "der"}
+            groups = []
+            cur_rel, cur_terms = "der", []
+            gi = 2
+            while gi <= 12:
+                raw = args.get(str(gi))
+                gi += 1
+                if raw is None:
+                    break
+                if raw.startswith(":"):
+                    if cur_terms and cur_rel:
+                        groups.append((cur_rel, cur_terms))
+                    # an unrecognised relation (:influence, :cognate...) is
+                    # not ancestry; its terms must not become parents
+                    cur_rel = RELS.get(raw.split("<")[0].strip().lstrip(":"))
+                    cur_terms = []
+                    continue
+                if raw.strip() and cur_rel:
+                    cur_terms.append(raw)
+            if cur_terms and cur_rel:
+                groups.append((cur_rel, cur_terms))
+            def gpri(g):
+                grel2, terms2 = g
+                unc0 = bool(split_mods(terms2[0])[1].get("unc"))
+                if grel2 != "form" and not unc0:
+                    return 0
+                return 1 if grel2 == "form" else 2
+
+            groups.sort(key=gpri)
+            wf = defold(own_word)
+
+            def esc(raw):
+                t = defold(clean_term(split_mods(raw)[0])).strip("-\u2212")
+                return -len(t) if t and t in wf else 0
+
+            for grel, terms in groups:
+                # Which part is the thread of a compound? The one the word
+                # carries: melarancia continues through arancia (the orange),
+                # not mela (the apple); teacher through teach, not -er.
+                # Contained parts win by length, page order breaks ties.
+                for raw in (sorted(terms, key=esc)
+                            if grel == "form" else terms[:1]):
+                    core, mods = split_mods(raw)
+                    if ":" in core:
+                        lg, term = core.split(":", 1)
+                        lg = lg.strip()
+                    else:
+                        lg, term = own_lang, core
+                    term = clean_term(term)
+                    ih = set(base_ids)
+                    if "id" in mods:
+                        ih.add(mods["id"])
+                    if lg and term:
+                        out.append((grel, lg, term,
+                                    base_gloss | tokens(mods.get("t", "")),
+                                    ih, bool(mods.get("unc"))))
             continue
 
         kind = KIND.get(name)
@@ -216,6 +269,7 @@ def parse_templates(tmpls, own_lang):
             def pfx(x):
                 return x if x.endswith(("-", "−")) else x + "-"
 
+            emit = []
             for term, mods, pos in vals:
                 if name in ("suffix", "suf") and pos > 1:
                     term = sfx(term)
@@ -238,8 +292,15 @@ def parse_templates(tmpls, own_lang):
                     gh |= tokens(mods["t"])
                 if "id" in mods:
                     ih.add(mods["id"])
-                out.append(("form", own_lang, term, gh, ih,
-                            bool(mods.get("unc"))))
+                emit.append((term, gh, ih, bool(mods.get("unc"))))
+            wf2 = defold(own_word)
+
+            def fsc(t4):
+                t = defold(t4[0]).strip("-\u2212")
+                return -len(t) if t and t in wf2 else 0
+
+            for term, gh, ih, unc in sorted(emit, key=fsc):
+                out.append(("form", own_lang, term, gh, ih, unc))
             continue
 
         lg = (args.get("2") or "").strip()
@@ -294,7 +355,8 @@ def main():
             note_ref(e["c"], e["w"])
             for _id in own_etymon_ids(e.get("t")):
                 page_ids[e["c"] + SEP + e["w"]].add(_id)
-            for kind, lg, term, _g, _i, _u in parse_templates(e.get("t") or [], e["c"]):
+            for kind, lg, term, _g, _i, _u in parse_templates(
+                    e.get("t") or [], e["c"], e["w"]):
                 note_ref(lg, term)
             if e.get("d"):
                 walk_refs(e["d"])
@@ -364,13 +426,22 @@ def main():
         c, w = sk.split(SEP, 1)
         return intern(c + ":" + w + ("#" + str(n) if len(ns) > 1 else ""))
 
-    def resolve(lg, term, gloss_hints, id_hints, ctx):
+    def resolve(lg, term, gloss_hints, id_hints, ctx, cword=""):
         term = term.lstrip("*").strip()
         sk = lg + SEP + term
         ns = sense_ns.get(sk)
         if not ns:
             stats["phantom"] += 1
             return intern(lg + ":" + term), False, "phantom", True
+        ns_all = ns
+        if cword and len(ns) > 1:
+            # "genitive/accusative singular of robot" is an inflection OF the
+            # word being resolved for, not its ancestor; robot must land on
+            # robota "serfdom", never on its own declension
+            cw = " of " + defold(cword)
+            ns = [n for n in ns
+                  if not defold(glosses.get(sk + SEP + str(n), ""))
+                         .rstrip(" .").endswith(cw)] or ns_all
         # Two different questions, two different evidence sets. WHICH sense may
         # use the reference's own spelling (picking the sense of bred glossed
         # "bread"). WHETHER to trust the landing may not: a gloss that names its
@@ -406,12 +477,12 @@ def main():
         if len(ns) == 1:
             trusted = trust_of(ns[0])
             stats["unique" if trusted else "unique untrusted"] += 1
-            return kf(sk, ns[0], ns), True, "unique", trusted
+            return kf(sk, ns[0], ns_all), True, "unique", trusted
         for sid in id_hints:
             n = sidmap.get(sk + SEP + sid)
             if n is not None and n in ns:
                 stats["senseid"] += 1
-                return kf(sk, n, ns), True, "senseid", True
+                return kf(sk, n, ns_all), True, "senseid", True
         if want_sel:
             best_n, best_s = None, 0
             for n in ns:
@@ -421,9 +492,9 @@ def main():
             if best_n is not None:
                 trusted = trust_of(best_n)
                 stats["gloss" if trusted else "gloss untrusted"] += 1
-                return kf(sk, best_n, ns), True, "gloss", trusted
+                return kf(sk, best_n, ns_all), True, "gloss", trusted
         stats["first"] += 1
-        return kf(sk, ns[0], ns), True, "first", False
+        return kf(sk, ns[0], ns_all), True, "first", False
 
     def wtok(w):
         return tokens("".join(ch for ch in unicodedata.normalize("NFD", w)
@@ -515,8 +586,10 @@ def main():
             note_node(akey, e["w"], True)
             ctx = tokens(glosses.get(ask + SEP + str(an), "")) | wtok(e["w"])
             have_primary = akey in primary_of
-            for kind, lg, term, gh, ih, unc in parse_templates(e.get("t") or [], e["c"]):
-                pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx)
+            for kind, lg, term, gh, ih, unc in parse_templates(
+                    e.get("t") or [], e["c"], e["w"]):
+                pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx,
+                                                    e["w"])
                 if not trusted and kind in ("inh", "bor", "der", "cal"):
                     stats["demoted"] += 1
                     kind = "root"

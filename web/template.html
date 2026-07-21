@@ -461,7 +461,7 @@
      ahuacatl, and a stray descendants edge from Pipil ahuacat (read on its
      own page as ahuat "oak" + -cat) must not carry the climb into the oak
      lineage. Nodes with no marked primary stay open to every edge. */
-  function primOK(par, child) {
+  function primOK(par, child, k) {
     var pp = PRIMPAR[child];
     if (!pp) return true;
     for (var i = 0; i < pp.length; i++) if (pp[i] === par) return true;
@@ -470,11 +470,13 @@
        and then cites *nahts and *nókʷts as the deeper stages. Blocking those
        would cut the chain at the phantom, so a primary that is itself a dead
        end releases the other parents; one that continues upward keeps its
-       monopoly. */
+       monopoly. The release opens lineage citations only, never formation
+       parts: uisce beatha's dead phantom aqua vītae must not hand the chain
+       to beatha "life" and rewrite whiskey as a descendant of living. */
     for (var i = 0; i < pp.length; i++) {
       if ((UP[pp[i]] || []).length) return false;
     }
-    return true;
+    return k !== K_DER;
   }
   function uncertainEdge(par, child) { return UNC.has(par * N + child); }
   function kids(id) { return DOWN[id] || []; }
@@ -563,7 +565,7 @@
       for (var j = 0; j < ps.length; j++) {
         if (!allow[ks[j]]) continue;
         var p = ps[j];
-        if (isAffix(p) || !primOK(p, cur)) continue;
+        if (isAffix(p) || !primOK(p, cur, ks[j])) continue;
         if (depth[p] !== undefined) continue;
         depth[p] = depth[cur] + 1;
         parentOf[p] = cur;
@@ -592,7 +594,7 @@
         for (var j = 0; j < ps.length; j++) {
           if (!allow[ks[j]]) continue;
           var p = ps[j];
-          if (isAffix(p) || seen[p] || !primOK(p, cur)) continue;
+          if (isAffix(p) || seen[p] || !primOK(p, cur, ks[j])) continue;
           seen[p] = 1;
           q.push(p);
           if (score[p] !== undefined) score[p] += 1;
@@ -619,7 +621,7 @@
       var ks = DOWN[cur] || [], kk = DOWNK[cur] || [], found = null;
       for (var i = 0; i < ks.length; i++) {
         var c = ks[i];
-        if (!allow[kk[i]] || inSet[c] === undefined || !primOK(cur, c)) continue;
+        if (!allow[kk[i]] || inSet[c] === undefined || !primOK(cur, c, kk[i])) continue;
         var sub = best(c);
         if (!sub) continue;
         /* Derivation is a side step, not a generation: night once climbed
@@ -686,7 +688,7 @@
       var best = -1, bn = -1;
       for (var j = 0; j < ps.length; j++) {
         var p = ps[j];
-        if (seen[p] || isAffix(p) || !isRecon(p) || !primOK(p, top)) continue;
+        if (seen[p] || isAffix(p) || !isRecon(p) || !primOK(p, top, kindOf(p, top))) continue;
         /* Only ever step up to a bare root. Reconstructed forms also have
            morphological parents -- *wódr̥ hangs off *r̥, the heteroclitic
            r-stem ending, which has no meaning of its own and whose children are
@@ -743,9 +745,10 @@
            ancestry through other recorded edges, so let the waves resume from
            a lower step and keep the walked tail. */
         var rescued = false;
-        for (var i = 1; i < walk.length - 1 && i <= 4 && !rescued; i++) {
+        for (var i = 1; i < walk.length && i <= 4 && !rescued; i++) {
           var e2 = climbWaves(walk[i]);
-          if (e2 && e2.route.length > i + 1) {
+          if (e2 && e2.route.length > i + 1 &&
+              kindOf(e2.route[e2.route.length - 2], walk[i]) !== K_ROOT) {
             walk = e2.route.slice(0, -1).concat(walk.slice(i));
             rescued = true;
           }
