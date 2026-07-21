@@ -75,6 +75,10 @@ const TESTS = [
   { w: 'en:rice', must: ['ὄρυζα|riso'], banL: ['rif'], banG: ['reef', 'rib'] },
   { w: 'en:ginger', must: ['ζιγγίβερις|zingiber'], banL: [], banG: [] },
   { w: 'en:dragon', must: ['δράκων'], banL: [], banG: [] },
+  { w: 'en:checkmate', must: ['eschec'], banL: [], banG: [] },
+  { w: 'en:tea', must: ['茶'], banL: [], banG: [] },
+  { w: 'en:butterfly', must: ['fleoge|fleugǭ'], banL: [], banG: [] },
+  { w: 'ja:パン', must: ['pão|panis'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

@@ -321,6 +321,9 @@ def parse_templates(tmpls, own_lang, own_word=""):
             continue
 
         if name in FORMATION:
+            # the template names the language the word was formed in;
+            # umbrella's page carries {{af|la|umbra|-lus}}, Latin parts
+            form_lang = (args.get("1") or "").strip() or own_lang
             vals = []
             i = 2
             while i <= 9:
@@ -372,7 +375,7 @@ def parse_templates(tmpls, own_lang, own_word=""):
                 return -len(t) if t and t in wf2 else 0
 
             for term, gh, ih, unc in sorted(emit, key=fsc):
-                out.append(("form", own_lang, term, gh, ih, unc, ()))
+                out.append(("form", form_lang, term, gh, ih, unc, ()))
             continue
 
         lg = (args.get("2") or "").strip()
@@ -543,10 +546,22 @@ def main():
 
         own_fold = "".join(ch for ch in unicodedata.normalize("NFD", term)
                            if not unicodedata.combining(ch)).lower()
+        cw_fold = defold(cword) if cword else ""
+
+        def tok_sub():
+            """A multiword target vouches through its tokens: eschec mat is
+            the parent of chekmat because "mat" sits inside the child's
+            word. No known fiction shares three such letters."""
+            if not cw_fold:
+                return False
+            for t2 in own_fold.replace("-", " ").split():
+                if len(t2) >= 3 and t2 in cw_fold:
+                    return True
+            return False
 
         def trust_of(n):
             g = glosses.get(sk + SEP + str(n), "")
-            return (not g) or (not want_trust) or bool(tokens(g) & want_trust)                 or prefix5(own_fold)
+            return (not g) or (not want_trust) or bool(tokens(g) & want_trust)                 or prefix5(own_fold) or tok_sub()
 
         if len(ns) == 1:
             trusted = trust_of(ns[0])
@@ -706,6 +721,7 @@ def main():
             # entry defines its own ancestry.
             prev_key, prev_entry, prev_kind = None, True, None
             open_pending = None
+            cited_seen = set()
             for kind, lg, term, gh, ih, unc, subs in parse_templates(
                     e.get("t") or [], e["c"], e["w"]):
                 pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx,
@@ -745,6 +761,7 @@ def main():
                 if (prev_key is not None and not prev_entry and not entry
                         and kind not in ("root", "form") and trusted
                         and pkey != prev_key and not is_affix_term(term)
+                        and pkey not in cited_seen
                         and ladder_ok(term, prev_key)):
                     # both ends phantom: a real entry ends the "from X, from
                     # Y" run -- pages also write "compare French ontologie"
@@ -753,13 +770,15 @@ def main():
                     stats["phantom ladder"] += 1
                 elif (prev_key is not None and not prev_entry and entry
                         and kind not in ("root", "form") and trusted
-                        and pkey != prev_key and not is_affix_term(term)):
+                        and pkey != prev_key and not is_affix_term(term)
+                        and pkey not in cited_seen):
                     # phantom-then-entry is ambiguous (salaire continues the
                     # salary ladder; ontologie is a mere parallel); hold it
                     # until the page's NEXT citation can vouch that it names
                     # one of the entry's own recorded parents
                     open_pending = [pkey, prev_key, None]
                     pending_ladder.append(open_pending)
+                cited_seen.add(pkey)
                 prev_key, prev_entry = (None, True) if kind in ("root", "form")                     else (pkey, entry)
                 prev_kind = None if kind in ("root", "form") else kind
                 for k2, lg2, t2 in subs:
@@ -893,7 +912,9 @@ def main():
     # Wiktionary files medieval and new Latin under plain Latin entries, so
     # a la-med or la-new citation may fold onto the la page (influentia).
     LANGVAR = {"la-med": "la", "la-new": "la", "la-vul": "la",
-               "la-ecc": "la", "la-lat": "la"}
+               "la-ecc": "la", "la-lat": "la",
+               "LL.": "la", "ML.": "la", "NL.": "la", "VL.": "la",
+               "EL.": "la"}
     cand = {}
     for key in node_word:
         if key in node_entry:
