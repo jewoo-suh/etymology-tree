@@ -570,6 +570,7 @@ def main():
                 walk_desc(nd["d"], ckey if trusted else parent_key,
                           (hint or parent_ctx) | wtok(w))
 
+    pending_ladder = []
     done = 0
     with io.open(os.path.join(EX, "source2.jsonl"), encoding="utf-8") as fh:
         for line in fh:
@@ -592,6 +593,7 @@ def main():
             # consecutive citations chain -- but only onto phantoms; a real
             # entry defines its own ancestry.
             prev_key, prev_entry = None, True
+            open_pending = None
             for kind, lg, term, gh, ih, unc in parse_templates(
                     e.get("t") or [], e["c"], e["w"]):
                 pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx,
@@ -619,6 +621,10 @@ def main():
                 add_edge(pkey, akey, kind)
                 if unc and pkey != akey:
                     uncertain.add((pkey, akey))
+                if (open_pending is not None and open_pending[2] is None
+                        and pkey not in (open_pending[0], open_pending[1])):
+                    open_pending[2] = pkey
+                    open_pending = None
                 if (prev_key is not None and not prev_entry and not entry
                         and kind not in ("root", "form") and trusted
                         and pkey != prev_key and not is_affix_term(term)):
@@ -627,6 +633,15 @@ def main():
                     # after a coinage, and that is parallelism, not descent
                     add_edge(pkey, prev_key, kind)
                     stats["phantom ladder"] += 1
+                elif (prev_key is not None and not prev_entry and entry
+                        and kind not in ("root", "form") and trusted
+                        and pkey != prev_key and not is_affix_term(term)):
+                    # phantom-then-entry is ambiguous (salaire continues the
+                    # salary ladder; ontologie is a mere parallel); hold it
+                    # until the page's NEXT citation can vouch that it names
+                    # one of the entry's own recorded parents
+                    open_pending = [pkey, prev_key, None]
+                    pending_ladder.append(open_pending)
                 prev_key, prev_entry = (None, True) if kind in ("root", "form")                     else (pkey, entry)
                 if (not have_primary and kind != "root" and pkey != akey
                         and not is_affix_term(term)):
@@ -642,6 +657,30 @@ def main():
 
     print("  resolution: " + "   ".join(
         "{} {:,}".format(k, v) for k, v in stats.most_common()), flush=True)
+
+    # A held phantom-then-entry pair joins the ladder only if the citation
+    # after the entry names one of the entry's own recorded parents: the
+    # salary page's next stop (salarium) is exactly what salaire's page
+    # cites, while nothing after ontologie matches its parents.
+    if pending_ladder:
+        childmap = collections.defaultdict(set)
+        for (pp, cc) in edges:
+            childmap[cc].add(pp)
+        n_bridge = 0
+        for entry_key, ph_key, nxt in pending_ladder:
+            if not nxt:
+                continue
+            nf = defold(node_word.get(nxt) or nxt.split(":", 1)[1])
+            for par in childmap.get(entry_key, ()):
+                pw = defold(node_word.get(par) or par.split(":", 1)[1])
+                if pw == nf or (len(pw) >= 5 and len(nf) >= 5
+                                and pw[:5] == nf[:5]):
+                    if (entry_key, ph_key) not in edges:
+                        add_edge(entry_key, ph_key, "der")
+                        n_bridge += 1
+                    break
+        print("ladder bridges through entries: {:,}".format(n_bridge),
+              flush=True)
 
     # ---- diacritic phantoms (case preserved) --------------------------------
     def fold(s):

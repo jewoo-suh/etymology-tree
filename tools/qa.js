@@ -61,6 +61,9 @@ const TESTS = [
   { w: 'en:create', must: ['creo'], banL: [], banG: [] },
   { w: 'en:concurrent', must: ['concurrens|concurrēns'], banL: [], banG: [] },
   { w: 'en:influence', must: ['influentia'], banL: [], banG: [] },
+  { w: 'en:salary', must: ['salarium|salārium'], banL: [], banG: [] },
+  { w: 'en:alcohol', must: ['guḫlum|كحل'], banL: [], banG: [] },
+  { w: 'en:paradise', must: ['παράδεισος'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------
