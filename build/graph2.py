@@ -124,7 +124,7 @@ def is_affix_term(t):
 
 
 def parse_templates(tmpls, own_lang):
-    """Yield (kind, lang, term, gloss_hints:set, id_hints:set)."""
+    """Yield (kind, lang, term, gloss_hints:set, id_hints:set, uncertain)."""
     out = []
     for t in tmpls:
         name, args = t.get("n"), t.get("a") or {}
@@ -166,7 +166,8 @@ def parse_templates(tmpls, own_lang):
                 else:
                     lg, term = own_lang, clean_term(core)
                 if lg and term:
-                    out.append((kind, lg, term, gh, ih))
+                    out.append((kind, lg, term, gh, ih,
+                                bool(mods.get("unc"))))
             continue
 
         if name == "etymon":
@@ -186,7 +187,8 @@ def parse_templates(tmpls, own_lang):
                 ih.add(mods["id"])
             if lg.strip() and term:
                 out.append((ekind, lg.strip(), term,
-                            base_gloss | tokens(mods.get("t", "")), ih))
+                            base_gloss | tokens(mods.get("t", "")), ih,
+                            bool(mods.get("unc"))))
             continue
 
         kind = KIND.get(name)
@@ -236,7 +238,8 @@ def parse_templates(tmpls, own_lang):
                     gh |= tokens(mods["t"])
                 if "id" in mods:
                     ih.add(mods["id"])
-                out.append(("form", own_lang, term, gh, ih))
+                out.append(("form", own_lang, term, gh, ih,
+                            bool(mods.get("unc"))))
             continue
 
         lg = (args.get("2") or "").strip()
@@ -254,7 +257,8 @@ def parse_templates(tmpls, own_lang):
         if "id" in mods:
             ih.add(mods["id"])
         if lg and term:
-            out.append((kind, lg, term, gh, ih))
+            out.append((kind, lg, term, gh, ih,
+                        bool(mods.get("unc") or args.get("unc"))))
     return out
 
 
@@ -290,7 +294,7 @@ def main():
             note_ref(e["c"], e["w"])
             for _id in own_etymon_ids(e.get("t")):
                 page_ids[e["c"] + SEP + e["w"]].add(_id)
-            for kind, lg, term, _g, _i in parse_templates(e.get("t") or [], e["c"]):
+            for kind, lg, term, _g, _i, _u in parse_templates(e.get("t") or [], e["c"]):
                 note_ref(lg, term)
             if e.get("d"):
                 walk_refs(e["d"])
@@ -447,6 +451,10 @@ def main():
     # gluing between pages is where every invented lineage came from.
     primary = set()
     primary_of = set()
+    # Wiktionary marks disputed derivations machine-readably (<unc:1> in
+    # etymon/ety templates); penguin's Welsh "white head" is a perhaps, and
+    # the display should say so rather than assert it.
+    uncertain = set()
 
     def note_node(key, word, entry):
         if key not in node_word:
@@ -507,7 +515,7 @@ def main():
             note_node(akey, e["w"], True)
             ctx = tokens(glosses.get(ask + SEP + str(an), "")) | wtok(e["w"])
             have_primary = akey in primary_of
-            for kind, lg, term, gh, ih in parse_templates(e.get("t") or [], e["c"]):
+            for kind, lg, term, gh, ih, unc in parse_templates(e.get("t") or [], e["c"]):
                 pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx)
                 if not trusted and kind in ("inh", "bor", "der", "cal"):
                     stats["demoted"] += 1
@@ -530,6 +538,8 @@ def main():
                     continue
                 note_node(pkey, term.lstrip("*").strip(), entry)
                 add_edge(pkey, akey, kind)
+                if unc and pkey != akey:
+                    uncertain.add((pkey, akey))
                 if (not have_primary and kind != "root" and pkey != akey
                         and not is_affix_term(term)):
                     primary.add((pkey, akey))
@@ -604,17 +614,21 @@ def main():
     if alias:
         remapped = {}
         reprim = set()
+        reunc = set()
         for (p, c), kind in edges.items():
             p2, c2 = alias.get(p, p), alias.get(c, c)
             if p2 == c2:
                 continue
             if (p, c) in primary:
                 reprim.add((p2, c2))
+            if (p, c) in uncertain:
+                reunc.add((p2, c2))
             cur = remapped.get((p2, c2))
             if cur is None or RANK[kind] > RANK[cur]:
                 remapped[(p2, c2)] = kind
         edges = remapped
         primary = reprim
+        uncertain = reunc
         for k in alias:
             node_word.pop(k, None)
 
@@ -636,9 +650,11 @@ def main():
     with io.open(os.path.join(OUT, "nodes2.json"), "w", encoding="utf-8") as fh:
         json.dump(nodes_out, fh, ensure_ascii=False)
     n_prim = sum(1 for pc in edges if pc in primary)
-    print("primary page-links: {:,}".format(n_prim))
+    n_unc = sum(1 for pc in edges if pc in uncertain)
+    print("primary page-links: {:,}   uncertain: {:,}".format(n_prim, n_unc))
     with io.open(os.path.join(OUT, "edges2.json"), "w", encoding="utf-8") as fh:
-        json.dump([[p, c, ("P" + k) if (p, c) in primary else k]
+        json.dump([[p, c, ("P" if (p, c) in primary else "")
+                    + ("?" if (p, c) in uncertain else "") + k]
                    for (p, c), k in sorted(edges.items())],
                   fh, ensure_ascii=False)
     up = collections.Counter()

@@ -52,6 +52,8 @@ const TESTS = [
   { w: 'en:salt', must: ['salt'], banL: [], banG: [] },
   { w: 'en:communism', must: ['communisme', 'communis'], banL: [], banG: [] },
   { w: 'en:bear', must: ['bera'], banL: [], banG: ['pierce'] },
+  { w: 'en:avocado', must: ['ahuacatl'], banL: ['ahuat', 'ahuacat'], banG: ['oak', 'acorn'] },
+  { w: 'en:penguin', must: ['kʷennom'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------
@@ -85,6 +87,7 @@ const GLOSS = {};
 }
 const DOWN = new Array(N), DOWNK = new Array(N), UP = new Array(N), UPK = new Array(N);
 const PRIM = new Set();
+const PRIMPAR = new Array(N);
 {
   const bin = Buffer.from(G.kinds, 'base64');
   const pb = G.prim ? Buffer.from(G.prim, 'base64') : null;
@@ -100,7 +103,10 @@ const PRIM = new Set();
       arr.push(c); ka.push(k);
       (UP[c] || (UP[c] = [])).push(p);
       (UPK[c] || (UPK[c] = [])).push(k);
-      if (pb && (pb[flat >> 3] >> (flat & 7)) & 1) PRIM.add(p * N + c);
+      if (pb && (pb[flat >> 3] >> (flat & 7)) & 1) {
+        PRIM.add(p * N + c);
+        (PRIMPAR[c] || (PRIMPAR[c] = [])).push(p);
+      }
       flat++;
     }
     DOWN[p] = arr; DOWNK[p] = ka;
@@ -118,9 +124,11 @@ const isAffix = id => {
 };
 const lbl = id => (isRecon(id) ? '*' : '') + WORDS[id];
 const KEY = {};
+const ALLIDS = {};
 for (let i = 0; i < N; i++) {
   const k = code(i) + ':' + WORDS[i];
   if (KEY[k] === undefined) KEY[k] = i;
+  (ALLIDS[k] = ALLIDS[k] || []).push(i);
 }
 
 // ---- the page's climb ------------------------------------------------------
@@ -142,7 +150,7 @@ function ancestorsVia(id, allow) {
     for (let j = 0; j < ps.length; j++) {
       if (!allow[ks[j]]) continue;
       const p = ps[j];
-      if (isAffix(p) || depth[p] !== undefined) continue;
+      if (isAffix(p) || depth[p] !== undefined || !primOK(p, cur)) continue;
       depth[p] = depth[cur] + 1; parentOf[p] = cur; q.push(p);
     }
   }
@@ -159,7 +167,8 @@ function bestRoute(root, id, allow, inSet) {
     let f = null;
     for (let i = 0; i < ks.length; i++) {
       const c = ks[i];
-      if (!allow[kk[i]] || inSet[c] === undefined || isAffix(c)) continue;
+      if (!allow[kk[i]] || inSet[c] === undefined || isAffix(c) ||
+          !primOK(cur, c)) continue;
       const s2 = best(c);
       if (!s2) continue;
       const cost = s2.cost + (kk[i] === 3 ? 1 : kk[i] === 2 ? 2 : 0) +
@@ -186,7 +195,7 @@ function topmost(cands, allow) {
       for (let j = 0; j < ps.length; j++) {
         if (!allow[ks[j]]) continue;
         const p = ps[j];
-        if (isAffix(p) || seen[p]) continue;
+        if (isAffix(p) || seen[p] || !primOK(p, cur)) continue;
         seen[p] = 1; q.push(p);
         if (score[p] !== undefined) score[p]++;
       }
@@ -203,7 +212,8 @@ function extendUp(route) {
     const top = route[0], ps = UP[top] || [];
     let best = -1, bn = -1;
     for (const p of ps) {
-      if (seen[p] || isAffix(p) || !isRecon(p) || !isBare(p)) continue;
+      if (seen[p] || isAffix(p) || !isRecon(p) || !isBare(p) ||
+          !primOK(p, top)) continue;
       const n = reachCount(p);
       if (n > bn) { bn = n; best = p; }
     }
@@ -250,6 +260,17 @@ function climbWaves(id) {
   while (cur !== id) { route.push(cur); cur = r.parentOf[cur]; }
   route.push(id);
   return { root: best, route };
+}
+/* Where a word's own page names its parent, exploration may only enter it
+   that way: es:aguacate cites Classical Nahuatl ahuacatl, and a stray
+   descendants edge from Pipil ahuacat (ahuat "oak" + -cat on its own page)
+   must not carry the climb into the oak lineage. */
+function primOK(par, child) {
+  const pp = PRIMPAR[child];
+  if (!pp) return true;
+  if (pp.indexOf(par) > -1) return true;
+  // a dead-end primary (phantom with no parents) releases the other parents
+  return !pp.some(x => (UP[x] || []).length);
 }
 function pageChain(id) {
   const route = [id], seen = { [id]: 1 };
@@ -384,25 +405,7 @@ function climb(id) {
 
 // ---- run --------------------------------------------------------------------
 const defold = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-let pass = 0, fail = 0;
-const failures = [];
-for (const t of TESTS) {
-  const id = KEY[t.w];
-  if (id === undefined) {
-    // budget slices may lack a word entirely; that is a capacity limit, not a
-    // falsehood, and only counts as failure without --allow-absent
-    if (process.argv.includes('--allow-absent')) {
-      console.log('  skip ' + t.w + ' (absent from this slice)');
-    } else {
-      failures.push(t.w + ': ABSENT from build');
-      fail++;
-    }
-    continue;
-  }
-  const route = displayedRoute(id);
-  // must-matching strips the asterisk (a required 'dagaz' may arrive as
-  // *dagaz); exact bans keep it, so banning attested "dag" (the dough entry)
-  // does not also ban the legitimate proto *dag
+function judge(t, route) {
   const labels = route.map(x => defold(lbl(x)).replace(/^\*/, ''));
   const exact = route.map(x => defold(lbl(x)));
   const texts = route.map(x => defold(lbl(x)) + ' ' + defold(GLOSS[x] || ''));
@@ -422,6 +425,38 @@ for (const t of TESTS) {
     if (texts.some(T => T.includes(bb)))
       probs.push('touches forbidden lexeme "' + b + '"');
   }
+  return probs;
+}
+let pass = 0, fail = 0;
+const failures = [];
+for (const t of TESTS) {
+  const ids = ALLIDS[t.w] || [];
+  const id = ids[0];
+  if (id === undefined) {
+    // budget slices may lack a word entirely; that is a capacity limit, not a
+    // falsehood, and only counts as failure without --allow-absent
+    if (process.argv.includes('--allow-absent')) {
+      console.log('  skip ' + t.w + ' (absent from this slice)');
+    } else {
+      failures.push(t.w + ': ABSENT from build');
+      fail++;
+    }
+    continue;
+  }
+  /* Homographs: the intended sense may sit at any position, and slice
+     builds can even reorder them. A test passes if any sense's displayed
+     chain satisfies it, and the reported chain is the best attempt. */
+  let route = null, probsBest = null;
+  for (const cand of ids) {
+    const r2 = displayedRoute(cand);
+    const pr = judge(t, r2);
+    if (!pr.length) { route = r2; probsBest = pr; break; }
+    if (!probsBest || pr.length < probsBest.length) { route = r2; probsBest = pr; }
+  }
+  // must-matching strips the asterisk (a required 'dagaz' may arrive as
+  // *dagaz); exact bans keep it, so banning attested "dag" (the dough entry)
+  // does not also ban the legitimate proto *dag
+  const probs = probsBest;
   if (probs.length) {
     fail++;
     failures.push(t.w + ': ' + probs.join('; ') + '\n      chain: ' +

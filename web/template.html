@@ -239,6 +239,12 @@
   }
   .lbl.ghost:hover { text-decoration: underline; fill-opacity: 1; }
   .ghostdot { stroke-dasharray: 1.5 1.5; }
+  .unclbl {
+    font: 700 10px/1 ui-sans-serif, system-ui, sans-serif;
+    fill: var(--accent); opacity: .85; text-anchor: middle;
+    paint-order: stroke; stroke: var(--canvas); stroke-width: 3px;
+  }
+  .arrow.unc { color: var(--accent); font-weight: 700; cursor: help; }
   .dot { stroke-width: 1.4; }
 
   /* Links have to cross the gap between columns, which is exactly where labels
@@ -420,9 +426,12 @@
   var UP = new Array(N), DOWN = new Array(N);
   var UPK = new Array(N), DOWNK = new Array(N);
   var PRIM = new Set();
+  var PRIMPAR = new Array(N);
+  var UNC = new Set();
   (function () {
     var bin = atob(G.kinds);
     var pbin = G.prim ? atob(G.prim) : null;
+    var ubin = G.unc ? atob(G.unc) : null;
     var flat = 0, runs = G.adj.split(";");
     for (var i = 0; i < runs.length; i++) {
       var s = runs[i], gt = s.indexOf(">");
@@ -436,13 +445,38 @@
         ka[j] = k;
         (UP[c] || (UP[c] = [])).push(p);
         (UPK[c] || (UPK[c] = [])).push(k);
-        if (pbin && (pbin.charCodeAt(flat >> 3) >> (flat & 7)) & 1) PRIM.add(p * N + c);
+        if (pbin && (pbin.charCodeAt(flat >> 3) >> (flat & 7)) & 1) {
+          PRIM.add(p * N + c);
+          (PRIMPAR[c] || (PRIMPAR[c] = [])).push(p);
+        }
+        if (ubin && (ubin.charCodeAt(flat >> 3) >> (flat & 7)) & 1) UNC.add(p * N + c);
         flat++;
       }
       DOWN[p] = arr;
       DOWNK[p] = ka;
     }
   })();
+  /* A word's own page names its parent; where it does, route exploration may
+     only enter that word along it. es:aguacate cites Classical Nahuatl
+     ahuacatl, and a stray descendants edge from Pipil ahuacat (read on its
+     own page as ahuat "oak" + -cat) must not carry the climb into the oak
+     lineage. Nodes with no marked primary stay open to every edge. */
+  function primOK(par, child) {
+    var pp = PRIMPAR[child];
+    if (!pp) return true;
+    for (var i = 0; i < pp.length; i++) if (pp[i] === par) return true;
+    /* The rule assumes the primary trail can actually be walked. Old English
+       niht names PWGmc *nahti first -- a phantom with no page of its own --
+       and then cites *nahts and *nókʷts as the deeper stages. Blocking those
+       would cut the chain at the phantom, so a primary that is itself a dead
+       end releases the other parents; one that continues upward keeps its
+       monopoly. */
+    for (var i = 0; i < pp.length; i++) {
+      if ((UP[pp[i]] || []).length) return false;
+    }
+    return true;
+  }
+  function uncertainEdge(par, child) { return UNC.has(par * N + child); }
   function kids(id) { return DOWN[id] || []; }
   function parents(id) { return UP[id] || []; }
   function kindOf(p, c) {
@@ -529,7 +563,7 @@
       for (var j = 0; j < ps.length; j++) {
         if (!allow[ks[j]]) continue;
         var p = ps[j];
-        if (isAffix(p)) continue;
+        if (isAffix(p) || !primOK(p, cur)) continue;
         if (depth[p] !== undefined) continue;
         depth[p] = depth[cur] + 1;
         parentOf[p] = cur;
@@ -558,7 +592,7 @@
         for (var j = 0; j < ps.length; j++) {
           if (!allow[ks[j]]) continue;
           var p = ps[j];
-          if (isAffix(p) || seen[p]) continue;
+          if (isAffix(p) || seen[p] || !primOK(p, cur)) continue;
           seen[p] = 1;
           q.push(p);
           if (score[p] !== undefined) score[p] += 1;
@@ -585,7 +619,7 @@
       var ks = DOWN[cur] || [], kk = DOWNK[cur] || [], found = null;
       for (var i = 0; i < ks.length; i++) {
         var c = ks[i];
-        if (!allow[kk[i]] || inSet[c] === undefined) continue;
+        if (!allow[kk[i]] || inSet[c] === undefined || !primOK(cur, c)) continue;
         var sub = best(c);
         if (!sub) continue;
         /* Derivation is a side step, not a generation: night once climbed
@@ -652,7 +686,7 @@
       var best = -1, bn = -1;
       for (var j = 0; j < ps.length; j++) {
         var p = ps[j];
-        if (seen[p] || isAffix(p) || !isRecon(p)) continue;
+        if (seen[p] || isAffix(p) || !isRecon(p) || !primOK(p, top)) continue;
         /* Only ever step up to a bare root. Reconstructed forms also have
            morphological parents -- *wódr̥ hangs off *r̥, the heteroclitic
            r-stem ending, which has no meaning of its own and whose children are
@@ -1387,6 +1421,18 @@
         d: "M" + startX + "," + a.sy + "C" + mid + "," + a.sy +
            " " + mid + "," + b.sy + " " + b.sx + "," + b.sy
       }));
+      /* Wiktionary's own hedge, kept visible: a small ? rides any link the
+         source marks as a disputed derivation (penguin, perhaps "white head") */
+      if (!p.data.more && uncertainEdge(a.data.n.id, b.data.n.id)) {
+        var qm = svgEl("text", {
+          "class": "unclbl", x: mid, y: (a.sy + b.sy) / 2 - 3
+        });
+        qm.textContent = "?";
+        var tt = svgEl("title", {});
+        tt.textContent = "uncertain: Wiktionary marks this derivation as disputed";
+        qm.appendChild(tt);
+        (on ? gOn : gLinks).appendChild(qm);
+      }
     });
     g.appendChild(gLinks);
     g.appendChild(gOn);
@@ -1532,6 +1578,18 @@
         d: "M" + startX + "," + a.sy + "C" + mid + "," + a.sy +
            " " + mid + "," + b.sy + " " + b.sx + "," + b.sy
       }));
+      /* Wiktionary's own hedge, kept visible: a small ? rides any link the
+         source marks as a disputed derivation (penguin, perhaps "white head") */
+      if (!p.data.more && uncertainEdge(a.data.n.id, b.data.n.id)) {
+        var qm = svgEl("text", {
+          "class": "unclbl", x: mid, y: (a.sy + b.sy) / 2 - 3
+        });
+        qm.textContent = "?";
+        var tt = svgEl("title", {});
+        tt.textContent = "uncertain: Wiktionary marks this derivation as disputed";
+        qm.appendChild(tt);
+        (on ? gOn : gLinks).appendChild(qm);
+      }
     });
     stage.appendChild(gLinks);
     stage.appendChild(gOn);
@@ -1678,7 +1736,13 @@
     var route = document.getElementById("route");
     route.textContent = "";
     (T.chain || [T.q]).forEach(function (step, i) {
-      if (i) route.appendChild(el("span", "arrow", "→"));
+      if (i) {
+        var pv = (T.chain || [])[i - 1];
+        var unsure = uncertainEdge(pv, step);
+        var ar = el("span", "arrow" + (unsure ? " unc" : ""), unsure ? "→?" : "→");
+        if (unsure) ar.title = "uncertain: Wiktionary marks this derivation as disputed";
+        route.appendChild(ar);
+      }
       var b = el("button", "step" + (i === 0 ? " root" : "") +
                             (step === T.q ? " you" : "") +
                             (isRecon(step) ? " recon" : ""));
@@ -1774,6 +1838,10 @@
         : n.kind === K_ROOT ? "a root citation"
         : n.kind === K_DER ? "word-formation"
         : "inheritance";
+      if (found.parent && found.parent.data && found.parent.data.n &&
+          uncertainEdge(found.parent.data.n.id, n.id)) {
+        arrived += " (uncertain per Wiktionary)";
+      }
       [["Direct children", kids(n.id).length],
        ["All descendants", reachCount(n.id)],
        ["Recorded parents", parents(n.id).length],
@@ -1885,6 +1953,17 @@
       s2.appendChild(document.createTextNode(r[1]));
       lines.appendChild(s2);
     });
+    var anyUnc = h.descendants().some(function (p) {
+      return p.parent && !p.data.more && !p.parent.data.more &&
+             uncertainEdge(p.parent.data.n.id, p.data.n.id);
+    });
+    if (anyUnc) {
+      var su = el("span", "lkey");
+      var qq = el("span", "arrow unc", "?");
+      su.appendChild(qq);
+      su.appendChild(document.createTextNode("uncertain (so marked on Wiktionary)"));
+      lines.appendChild(su);
+    }
     if (lines.childNodes.length > 1) box.appendChild(lines);
 
     var leg = el("div", "legend");
@@ -2006,7 +2085,11 @@
       text = T.formation.map(function (c) { return labelOf(c[c.length - 1]); })
         .join(" + ") + " → " + labelOf(T.q);
     } else {
-      text = (T.chain || [T.q]).map(labelOf).join(" → ");
+      var ch = T.chain || [T.q];
+      text = ch.map(function (s, i) {
+        if (!i) return labelOf(s);
+        return (uncertainEdge(ch[i - 1], s) ? " →? " : " → ") + labelOf(s);
+      }).join("");
     }
     var btn = this;
     function done(ok) {

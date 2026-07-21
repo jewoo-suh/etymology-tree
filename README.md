@@ -97,6 +97,13 @@ node tools/qa.js web/graph-full.json
 A failed test is a blocked release. Found a wrong chain? Add it as a test
 first, then fix it.
 
+### Uncertain etymologies
+
+Wiktionary flags disputed derivations machine-readably, and the site keeps
+the hedge: an uncertain link wears a small `?` on the tree, the chain bar
+writes the step as `->?`, and copied chains keep the marker (penguin from
+Welsh *pen gwyn* "white head" is a perhaps, not a fact).
+
 ## Known limits
 
 **Chains follow the pages, not the graph.** Every entry's first citation —
