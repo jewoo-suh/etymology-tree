@@ -64,6 +64,13 @@ const TESTS = [
   { w: 'en:salary', must: ['salarium|salārium'], banL: [], banG: [] },
   { w: 'en:alcohol', must: ['guḫlum|كحل'], banL: [], banG: [] },
   { w: 'en:paradise', must: ['παράδεισος'], banL: [], banG: [] },
+  { w: 'en:admiral', must: ['أمير|امير'], banL: [], banG: [] },
+  { w: 'en:quarantine', must: ['quadraginta|quadrāgintā'], banL: ['quarentena'], banG: [] },
+  { w: 'en:hazard', must: ['زهر'], banL: [], banG: [] },
+  { w: 'en:magazine', must: ['مخزن|مَخْزَن'], banL: [], banG: [] },
+  { w: 'en:karaoke', must: ['オーケストラ|orchestra'], banL: [], banG: [] },
+  { w: 'en:zero', must: ['शून्य|صفر'], banL: [], banG: [] },
+  { w: 'en:cipher', must: ['صفر|cifra'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

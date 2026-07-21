@@ -113,6 +113,77 @@ def defold(s2):
                    if not unicodedata.combining(ch)).lower()
 
 
+def ety_subs(raw, host_lang):
+    """Parse <ety:rel<lang:term>...> tree mods inside an etymon argument:
+    the citing page's own statement of the cited stage's ancestry. One
+    level deep is all the data uses; bare terms take the host's language."""
+    subs = []
+    i = 0
+    while True:
+        j = raw.find("<ety:", i)
+        if j < 0:
+            break
+        k, depth = j + 1, 1
+        while k < len(raw) and depth:
+            if raw[k] == "<":
+                depth += 1
+            elif raw[k] == ">":
+                depth -= 1
+            k += 1
+        body = raw[j + 5:k - 1]
+        i = k
+        # the body holds colon-separated segments, each rel<part><part>...;
+        # admirālis reads af<ar:amir><-ālis>:influence<la:admīror>, and the
+        # influence segment is commentary, not ancestry
+        segs, d2, cur = [], 0, ""
+        for ch in body:
+            if ch == "<":
+                d2 += 1
+            elif ch == ">":
+                d2 -= 1
+            if ch == ":" and d2 == 0:
+                segs.append(cur)
+                cur = ""
+                continue
+            cur += ch
+        if cur:
+            segs.append(cur)
+        for seg in segs:
+            rel = ""
+            for ch in seg:
+                if not ch.isalpha():
+                    break
+                rel += ch
+            kind = {"inh": "inh", "bor": "bor", "der": "der", "af": "form",
+                    "cal": "cal", "calque": "cal", "lbor": "bor"}.get(rel)
+            if not kind:
+                continue
+            parts, d3, buf = [], 0, ""
+            for ch in seg[len(rel):]:
+                if ch == "<":
+                    d3 += 1
+                    if d3 == 1:
+                        buf = ""
+                        continue
+                elif ch == ">":
+                    d3 -= 1
+                    if d3 == 0:
+                        parts.append(buf)
+                        continue
+                if d3 >= 1:
+                    buf += ch
+            for pt in parts:
+                core = pt.split("<")[0]
+                if ":" in core:
+                    lg2, t2 = core.split(":", 1)
+                else:
+                    lg2, t2 = host_lang, core
+                t2 = clean_term(t2)
+                if lg2.strip() and t2:
+                    subs.append((kind, lg2.strip(), t2))
+    return subs
+
+
 def clean_term(t):
     if not t:
         return ""
@@ -130,7 +201,7 @@ def is_affix_term(t):
 
 
 def parse_templates(tmpls, own_lang, own_word=""):
-    """Yield (kind, lang, term, gloss_hints:set, id_hints:set, uncertain)."""
+    """Yield (kind, lang, term, gloss_hints, id_hints, uncertain, subs)."""
     out = []
     for t in tmpls:
         name, args = t.get("n"), t.get("a") or {}
@@ -173,7 +244,7 @@ def parse_templates(tmpls, own_lang, own_word=""):
                     lg, term = own_lang, clean_term(core)
                 if lg and term:
                     out.append((kind, lg, term, gh, ih,
-                                bool(mods.get("unc"))))
+                                bool(mods.get("unc")), ()))
             continue
 
         if name == "etymon":
@@ -241,7 +312,8 @@ def parse_templates(tmpls, own_lang, own_word=""):
                     if lg and term:
                         out.append((grel, lg, term,
                                     base_gloss | tokens(mods.get("t", "")),
-                                    ih, bool(mods.get("unc"))))
+                                    ih, bool(mods.get("unc")),
+                                    tuple(ety_subs(raw, lg))))
             continue
 
         kind = KIND.get(name)
@@ -300,7 +372,7 @@ def parse_templates(tmpls, own_lang, own_word=""):
                 return -len(t) if t and t in wf2 else 0
 
             for term, gh, ih, unc in sorted(emit, key=fsc):
-                out.append(("form", own_lang, term, gh, ih, unc))
+                out.append(("form", own_lang, term, gh, ih, unc, ()))
             continue
 
         lg = (args.get("2") or "").strip()
@@ -319,7 +391,7 @@ def parse_templates(tmpls, own_lang, own_word=""):
             ih.add(mods["id"])
         if lg and term:
             out.append((kind, lg, term, gh, ih,
-                        bool(mods.get("unc") or args.get("unc"))))
+                        bool(mods.get("unc") or args.get("unc")), ()))
     return out
 
 
@@ -355,9 +427,11 @@ def main():
             note_ref(e["c"], e["w"])
             for _id in own_etymon_ids(e.get("t")):
                 page_ids[e["c"] + SEP + e["w"]].add(_id)
-            for kind, lg, term, _g, _i, _u in parse_templates(
+            for kind, lg, term, _g, _i, _u, _subs in parse_templates(
                     e.get("t") or [], e["c"], e["w"]):
                 note_ref(lg, term)
+                for _k2, lg2, t2 in _subs:
+                    note_ref(lg2, t2)
             if e.get("d"):
                 walk_refs(e["d"])
     split_sid = {sk: ids for sk, ids in page_ids.items() if len(ids) > 1}
@@ -592,9 +666,9 @@ def main():
             # own, the citing page's ladder is the only ancestry it has, so
             # consecutive citations chain -- but only onto phantoms; a real
             # entry defines its own ancestry.
-            prev_key, prev_entry = None, True
+            prev_key, prev_entry, prev_kind = None, True, None
             open_pending = None
-            for kind, lg, term, gh, ih, unc in parse_templates(
+            for kind, lg, term, gh, ih, unc, subs in parse_templates(
                     e.get("t") or [], e["c"], e["w"]):
                 pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx,
                                                     e["w"])
@@ -625,6 +699,11 @@ def main():
                         and pkey not in (open_pending[0], open_pending[1])):
                     open_pending[2] = pkey
                     open_pending = None
+                # "borrowed from X; displaced native Y": an inherited
+                # citation after a borrowing starts a new run, it is not a
+                # deeper rung of the borrowed line
+                if kind == "inh" and prev_kind in ("der", "bor", "cal"):
+                    prev_key, prev_entry = None, True
                 if (prev_key is not None and not prev_entry and not entry
                         and kind not in ("root", "form") and trusted
                         and pkey != prev_key and not is_affix_term(term)):
@@ -643,6 +722,18 @@ def main():
                     open_pending = [pkey, prev_key, None]
                     pending_ladder.append(open_pending)
                 prev_key, prev_entry = (None, True) if kind in ("root", "form")                     else (pkey, entry)
+                prev_kind = None if kind in ("root", "form") else kind
+                for k2, lg2, t2 in subs:
+                    if is_affix_term(t2):
+                        continue
+                    skey, sentry, _show, strust = resolve(
+                        lg2, t2, set(), set(), ctx, e["w"])
+                    if not strust and k2 in ("inh", "bor", "der", "cal"):
+                        k2 = "root"
+                    note_node(skey, t2.lstrip("*").strip(), sentry)
+                    if skey != pkey:
+                        add_edge(skey, pkey, k2)
+                        stats["ety tree"] += 1
                 if (not have_primary and kind != "root" and pkey != akey
                         and not is_affix_term(term)):
                     primary.add((pkey, akey))
