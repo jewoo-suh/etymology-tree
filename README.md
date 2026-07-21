@@ -100,12 +100,14 @@ first, then fix it.
 ### How the site loads
 
 The deployed page is a small shell (`index.html`, built by
-`build/site.py`) that fetches one gzipped graph asset
-(`graph-web-<hash>.json.gz`, about a third of the raw JSON), shows a
-progress bar, and unpacks it in the browser with `DecompressionStream`.
-The hash changes only when the graph changes, so revisits hit the
-browser cache. The single-file builds from `build/bundle.py` remain for
-offline use (the full one lives on the GitHub release).
+`build/site.py`) plus two gzipped assets: the core graph
+(`graph-core-<hash>.json.gz`, ~17 MB) fetched with a progress bar and
+unpacked via `DecompressionStream`, and the definitions
+(`gloss-<hash>.json.gz`, ~15 MB) which stream in the background after
+the page is already usable and pop into the panel when ready. Content
+hashes keep revisits cache-clean. The single-file builds from
+`build/bundle.py` remain for offline use (the full one lives on the
+GitHub release).
 
 ### Uncertain etymologies
 

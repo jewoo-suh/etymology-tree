@@ -375,7 +375,7 @@
     "gap:14px;background:var(--canvas,#101014);color:var(--ink,#ddd);" +
     "font:15px/1.4 system-ui,sans-serif;z-index:99;text-align:center;" +
     "padding:0 16px;");
-  wrap.innerHTML = '<div>Loading the etymology graph (32 MB, cached ' +
+  wrap.innerHTML = '<div>Loading the etymology graph (17 MB, cached ' +
     'after the first visit)\u2026</div>' +
     '<div style="width:min(420px,70vw);height:6px;border-radius:3px;' +
     'background:rgba(128,128,128,.25);overflow:hidden">' +
@@ -391,42 +391,50 @@
          "works everywhere.");
     return;
   }
-  fetch("graph-web-8933600dd8.json.gz").then(function (r) {
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    var total = +r.headers.get("Content-Length") || 33764173;
-    var reader = r.body.getReader(), got = 0, parts = [];
-    function pump() {
-      return reader.read().then(function (s) {
-        if (s.done) return null;
-        parts.push(s.value);
-        got += s.value.length;
-        var pc = total ? Math.min(99, Math.round(got * 100 / total)) : 50;
-        document.getElementById("bootbar").style.width = pc + "%";
-        document.getElementById("boottxt").textContent =
-          (got / 1048576).toFixed(1) + " MB of " +
-          (total / 1048576).toFixed(1) + " MB";
-        return pump();
-      });
-    }
-    return pump().then(function () {
-      document.getElementById("bootbar").style.width = "100%";
-      document.getElementById("boottxt").textContent = "unpacking\u2026";
-      var ds = new Blob(parts).stream()
-        .pipeThrough(new DecompressionStream("gzip"));
-      return new Response(ds).text();
+  function pull(url, expect, onpc) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status + " for " + url);
+      var total = +r.headers.get("Content-Length") || expect;
+      var reader = r.body.getReader(), got = 0, parts = [];
+      function pump() {
+        return reader.read().then(function (s) {
+          if (s.done) return null;
+          parts.push(s.value);
+          got += s.value.length;
+          if (onpc) onpc(got, total);
+          return pump();
+        });
+      }
+      return pump().then(function () {
+        var ds = new Blob(parts).stream()
+          .pipeThrough(new DecompressionStream("gzip"));
+        return new Response(ds).text();
+      }).then(function (t) { return JSON.parse(t); });
     });
-  }).then(function (txt) {
+  }
+  // definitions ride behind; the page must not wait for them
+  var glossReady = pull("gloss-32385eed96.json.gz", 16162171, null);
+  pull("graph-core-8fe720d2f1.json.gz", 17598993, function (got, total) {
+    var pc = total ? Math.min(99, Math.round(got * 100 / total)) : 50;
+    document.getElementById("bootbar").style.width = pc + "%";
+    document.getElementById("boottxt").textContent =
+      (got / 1048576).toFixed(1) + " MB of " +
+      (total / 1048576).toFixed(1) + " MB";
+  }).then(function (core) {
+    document.getElementById("bootbar").style.width = "100%";
     document.getElementById("boottxt").textContent =
       "building the graph\u2026";
     return new Promise(function (res) {
-      setTimeout(function () { res(txt); }, 30);
+      setTimeout(function () { res(core); }, 30);
     });
-  }).then(function (txt) {
-    window.__GRAPH__ = JSON.parse(txt);
-    txt = null;
+  }).then(function (core) {
+    window.__GRAPH__ = core;
     window.__boot();
     window.__GRAPH__ = null;
     wrap.remove();
+    glossReady.then(function (gd) {
+      if (window.__applyGloss) window.__applyGloss(gd);
+    }).catch(function () { /* definitions are an extra, not a blocker */ });
   }).catch(function (e) {
     fail("Failed to load the graph (" + e.message + "). Refresh to " +
          "retry, or use the offline build from the GitHub release.");
@@ -467,11 +475,40 @@ window.__boot = function () {
 
   /* Glosses are kept only for reconstructed forms. An attested word's meaning
      is usually recoverable from its descendants; *ph₂tḗr's is not. */
+  /* Definitions are a third of the payload and none of them are needed to
+     draw a tree, so the deployed site ships them as a second file that
+     arrives after boot; the single-file builds carry them inside G and
+     apply them here immediately. */
   var GLOSS = {};
-  (function () {
-    var ids = nums(G.gids), txt = G.gtexts ? G.gtexts.split("\n") : [];
+  function applyGlosses(gd) {
+    if (!gd || !gd.gids) return;
+    var ids = nums(gd.gids), txt = gd.gtexts ? gd.gtexts.split("\n") : [];
     for (var i = 0; i < ids.length; i++) GLOSS[ids[i]] = txt[i];
-  })();
+  }
+  applyGlosses(G);
+  window.__applyGloss = function (gd) {
+    applyGlosses(gd);
+    /* tree nodes bake their gloss at build time, so rebuild the current
+       tree in place while keeping every bit of view state the reader has
+       accumulated -- the definitions arriving must never yank the view */
+    if (state.tree && state.tree.q !== undefined) {
+      var keep = { open: state.open, all: state.all, mode: state.mode,
+                   focus: state.focus, sel: state.sel, band: state.bandOpen,
+                   zoom: state.zoom };
+      state.tree = treeFor(state.tree.q);
+      tagFamilies(state.tree.tree);
+      state.open = keep.open;
+      state.all = keep.all;
+      state.mode = keep.mode;
+      state.focus = keep.focus;
+      state.sel = keep.sel;
+      state.bandOpen = keep.band;
+      state.zoom = keep.zoom;
+      state.fit = false;
+      state.scrollTo = false;
+    }
+    render();
+  };
 
   /* Nodes sort by "code:word", so each language is one contiguous run and the
      per-node language list ships as ~3.5k run lengths instead of 577k numbers. */
