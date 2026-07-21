@@ -71,6 +71,7 @@ const TESTS = [
   { w: 'en:karaoke', must: ['オーケストラ|orchestra'], banL: [], banG: [] },
   { w: 'en:zero', must: ['शून्य|صفر'], banL: [], banG: [] },
   { w: 'en:cipher', must: ['صفر|cifra'], banL: [], banG: [] },
+  { w: 'en:-er', must: ['ārijaz|arijaz|-ere'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------
@@ -167,7 +168,8 @@ function ancestorsVia(id, allow) {
     for (let j = 0; j < ps.length; j++) {
       if (!allow[ks[j]]) continue;
       const p = ps[j];
-      if (isAffix(p) || depth[p] !== undefined || !primOK(p, cur, ks[j])) continue;
+      if ((isAffix(p) && !AFFIX_Q) || depth[p] !== undefined ||
+          !primOK(p, cur, ks[j])) continue;
       depth[p] = depth[cur] + 1; parentOf[p] = cur; q.push(p);
     }
   }
@@ -212,7 +214,8 @@ function topmost(cands, allow) {
       for (let j = 0; j < ps.length; j++) {
         if (!allow[ks[j]]) continue;
         const p = ps[j];
-        if (isAffix(p) || seen[p] || !primOK(p, cur, ks[j])) continue;
+        if ((isAffix(p) && !AFFIX_Q) || seen[p] ||
+            !primOK(p, cur, ks[j])) continue;
         seen[p] = 1; q.push(p);
         if (score[p] !== undefined) score[p]++;
       }
@@ -229,7 +232,7 @@ function extendUp(route) {
     const top = route[0], ps = UP[top] || [];
     let best = -1, bn = -1;
     for (const p of ps) {
-      if (seen[p] || isAffix(p) || !isRecon(p) || !isBare(p) ||
+      if (seen[p] || (isAffix(p) && !AFFIX_Q) || !isRecon(p) || !isBare(p) ||
           !primOK(p, top, kindNum(p, top))) continue;
       const n = reachCount(p);
       if (n > bn) { bn = n; best = p; }
@@ -303,7 +306,8 @@ function pageChain(id) {
     const ps = UP[cur] || [];
     let next = -1;
     for (const q of ps) {
-      if (!PRIM.has(q * N + cur) || seen[q] || isAffix(q)) continue;
+      if (!PRIM.has(q * N + cur) || seen[q] ||
+          (isAffix(q) && !AFFIX_Q)) continue;
       next = q;
       break;
     }
@@ -406,7 +410,9 @@ function displayedRoute(id) {
   return route;
 }
 
+let AFFIX_Q = false;
 function climb(id) {
+  AFFIX_Q = isAffix(id);
   let walk = pageChain(id);
   if (walk.length > 1) {
     const ext = climbWaves(walk[0]);

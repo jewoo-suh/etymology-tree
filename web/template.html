@@ -756,7 +756,7 @@
       for (var j = 0; j < ps.length; j++) {
         if (!allow[ks[j]]) continue;
         var p = ps[j];
-        if (isAffix(p) || !primOK(p, cur, ks[j])) continue;
+        if ((isAffix(p) && !AFFIX_Q) || !primOK(p, cur, ks[j])) continue;
         if (depth[p] !== undefined) continue;
         depth[p] = depth[cur] + 1;
         parentOf[p] = cur;
@@ -785,7 +785,8 @@
         for (var j = 0; j < ps.length; j++) {
           if (!allow[ks[j]]) continue;
           var p = ps[j];
-          if (isAffix(p) || seen[p] || !primOK(p, cur, ks[j])) continue;
+          if ((isAffix(p) && !AFFIX_Q) || seen[p] ||
+              !primOK(p, cur, ks[j])) continue;
           seen[p] = 1;
           q.push(p);
           if (score[p] !== undefined) score[p] += 1;
@@ -879,7 +880,8 @@
       var best = -1, bn = -1;
       for (var j = 0; j < ps.length; j++) {
         var p = ps[j];
-        if (seen[p] || isAffix(p) || !isRecon(p) || !primOK(p, top, kindOf(p, top))) continue;
+        if (seen[p] || (isAffix(p) && !AFFIX_Q) || !isRecon(p) ||
+            !primOK(p, top, kindOf(p, top))) continue;
         /* Only ever step up to a bare root. Reconstructed forms also have
            morphological parents -- *wódr̥ hangs off *r̥, the heteroclitic
            r-stem ending, which has no meaning of its own and whose children are
@@ -910,7 +912,8 @@
       var ps = upList(cur), next = -1;
       for (var j = 0; j < ps.length; j++) {
         var q = ps[j];
-        if (!PRIM.has(q * N + cur) || seen[q] || isAffix(q)) continue;
+        if (!PRIM.has(q * N + cur) || seen[q] ||
+            (isAffix(q) && !AFFIX_Q)) continue;
         next = q;
         break;
       }
@@ -922,7 +925,11 @@
     return route;
   }
 
+  var AFFIX_Q = false;
   function climb(id) {
+    /* an affix page has an affix lineage: opening -er must walk -ere and
+       *-arijaz, which every other climb rightly refuses to step through */
+    AFFIX_Q = isAffix(id);
     var walk = pageChain(id);
     if (walk.length > 1) {
       // the pages carried us as far as they cite; the waves finish the top
@@ -1957,17 +1964,19 @@
       }
 
     });
-    /* The affix a step was built with, drawn into the graph itself: nighten
-       shows its -en arriving, teacher its -er. Path nodes only -- one beside
-       every node in the tree was tried, and it was noise. */
+    /* The parts a step was built from, drawn into the graph itself: nighten
+       shows its -en arriving, chocolatl its xococ and -tl. Path nodes only --
+       one beside every node in the tree was tried, and it was noise. */
     var gAff = svgEl("g", {});
     all.forEach(function (p) {
       if (p.data.more || p.data.ghost !== undefined || !p.data.n.path) return;
       var n = p.data.n, ps = upList(n.id), ks = upKinds(n.id);
+      var treePar = p.parent && !p.data.more && p.parent.data &&
+                    p.parent.data.n ? p.parent.data.n.id : -1;
       var shown = 0;
-      for (var j = 0; j < ps.length && shown < 2; j++) {
+      for (var j = 0; j < ps.length && shown < 3; j++) {
         var q = ps[j];
-        if (ks[j] !== K_DER || code(q) !== n.code || !isAffix(q)) continue;
+        if (ks[j] !== K_DER || code(q) !== n.code || q === treePar) continue;
         var ay = p.sy + 13 + shown * 12;
         gAff.appendChild(svgEl("path", {
           "class": "affixlink",
@@ -2399,8 +2408,18 @@
     } else {
       var ch = T.chain || [T.q];
       text = ch.map(function (s, i) {
-        if (!i) return labelOf(s);
-        return (uncertainEdge(ch[i - 1], s) ? " →? " : " → ") + labelOf(s);
+        var seg = (!i ? "" : (uncertainEdge(ch[i - 1], s) ? " →? "
+                                                          : " → ")) +
+                  labelOf(s);
+        var prev = i ? ch[i - 1] : -1;
+        var ps = upList(s), ks = upKinds(s), parts = [];
+        for (var pi = 0; pi < ps.length && parts.length < 3; pi++) {
+          if (ks[pi] !== K_DER || code(ps[pi]) !== code(s) ||
+              ps[pi] === prev) continue;
+          parts.push(labelOf(ps[pi]));
+        }
+        if (parts.length) seg += " (+" + parts.join(" +") + ")";
+        return seg;
       }).join("");
     }
     var btn = this;

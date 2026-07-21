@@ -735,7 +735,11 @@ def main():
                         add_edge(skey, pkey, k2)
                         stats["ety tree"] += 1
                 if (not have_primary and kind != "root" and pkey != akey
-                        and not is_affix_term(term)):
+                        and (not is_affix_term(term)
+                             or is_affix_term(e["w"]))):
+                    # an affix never anchors a word's lineage, but an affix
+                    # PAGE has an affix lineage of its own: -er descends from
+                    # Old English -ere and Proto-Germanic *-ārijaz
                     primary.add((pkey, akey))
                     primary_of.add(akey)
                     have_primary = True
