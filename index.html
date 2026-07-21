@@ -1089,7 +1089,9 @@
     var ks = kids(id), kk = downKinds(id);
     var out = [];
     for (var i = 0; i < ks.length; i++) {
-      if (isAffix(ks[i])) continue;
+      /* affix children clutter word trees, but an affix QUERY descends
+         through affixes: im- must draw below *n̥- and in- */
+      if (isAffix(ks[i]) && !AFFIX_Q) continue;
       if (kk[i] !== K_ROOT || withRoot) out.push([ks[i], kk[i]]);
     }
     if (out.length < 3) return out;
