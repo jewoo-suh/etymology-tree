@@ -79,6 +79,13 @@ const TESTS = [
   { w: 'en:tea', must: ['茶'], banL: [], banG: [] },
   { w: 'en:butterfly', must: ['fleoge|fleugǭ'], banL: [], banG: [] },
   { w: 'ja:パン', must: ['pão|panis'], banL: [], banG: [] },
+  { w: 'en:apricot', must: ['بَرْقُوق|برقوق|βερικοκκία'], banL: [], banG: [] },
+  { w: 'en:angel', must: ['angelus|ἄγγελος'], banL: [], banG: [] },
+  { w: 'en:artichoke', must: ['خرشوف'], banL: [], banG: [] },
+  { w: 'en:person', must: ['πρόσωπον|persona'], banL: [], banG: [] },
+  { w: 'en:church', must: ['κυριακόν|kirikā'], banL: [], banG: [] },
+  { w: 'en:devil', must: ['διάβολος|diabolus'], banL: [], banG: [] },
+  { w: 'en:cloud', must: ['clud|klūtaz'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

@@ -155,7 +155,8 @@ def ety_subs(raw, host_lang):
                     break
                 rel += ch
             kind = {"inh": "inh", "bor": "bor", "der": "der", "af": "form",
-                    "cal": "cal", "calque": "cal", "lbor": "bor"}.get(rel)
+                    "cal": "cal", "calque": "cal", "lbor": "bor",
+                    "from": "der"}.get(rel)
             if not kind:
                 continue
             parts, d3, buf = [], 0, ""
@@ -184,12 +185,18 @@ def ety_subs(raw, host_lang):
     return subs
 
 
+PARENNOTE = re.compile(r"\([^()]*\)")
+
+
 def clean_term(t):
     if not t:
         return ""
     t = t.split("<")[0].strip()
     if "(" in t or ")" in t:
-        return ""
+        # "(persica) praecocia" keeps its word; "(cut off)" has nothing left
+        t = PARENNOTE.sub("", t).strip()
+        if "(" in t or ")" in t:
+            return ""
     t = t.lstrip("*").strip()
     if t in ("", "-", "--", "?"):
         return ""
@@ -217,11 +224,12 @@ def parse_templates(tmpls, own_lang, own_word=""):
                 base_ids.add(v)
 
         if name == "ety":
+            ETYRELS = {"af": "form", "affix": "form", "inh": "inh",
+                       "bor": "bor", "der": "der", "cal": "cal",
+                       "calque": "cal", "root": "root", "lbor": "bor",
+                       "psm": "cal", "sl": "cal"}
             rel = (args.get("2") or "").split("<")[0].strip().lstrip(":")
-            kind = {"af": "form", "affix": "form", "inh": "inh", "bor": "bor",
-                    "der": "der", "cal": "cal", "calque": "cal",
-                    "root": "root", "lbor": "bor", "psm": "cal",
-                    "sl": "cal"}.get(rel)
+            kind = ETYRELS.get(rel)
             if not kind:
                 continue
             i = 3
@@ -230,6 +238,14 @@ def parse_templates(tmpls, own_lang, own_word=""):
                 i += 1
                 if raw is None:
                     break
+                if raw.startswith(":"):
+                    # a chain may switch relations mid-run: {{ety|ar|:sl|
+                    # sa:sunya|:root|s-f-r}} -- the root marker is a new
+                    # relation, not a term
+                    kind = ETYRELS.get(raw.split("<")[0].strip().lstrip(":"))
+                    if not kind:
+                        break
+                    continue
                 core, mods = split_mods(raw)
                 gh = set(base_gloss)
                 ih = set(base_ids)
@@ -503,10 +519,26 @@ def main():
         c, w = sk.split(SEP, 1)
         return intern(c + ":" + w + ("#" + str(n) if len(ns) > 1 else ""))
 
+    def strip_marks(s3):
+        """Accent-like marks only (combining class 220+): the Old English
+        dot and the Vedic anudatta go, but a Devanagari virama (class 9)
+        is structure, and stripping it corrupts every conjunct."""
+        return "".join(ch for ch in unicodedata.normalize("NFD", s3)
+                       if unicodedata.combining(ch) < 220)
+
     def resolve(lg, term, gloss_hints, id_hints, ctx, cword=""):
         term = term.lstrip("*").strip()
         sk = lg + SEP + term
         ns = sense_ns.get(sk)
+        if not ns:
+            # pages cite Old English with dots (anġel) that the registry
+            # spells plain (angel); retry with combining marks stripped so
+            # the citation reaches the real senses instead of a phantom
+            t2 = strip_marks(term)
+            if t2 != term:
+                sk2 = lg + SEP + t2
+                if sk2 in sense_ns:
+                    sk, term, ns = sk2, t2, sense_ns[sk2]
         if not ns:
             stats["phantom"] += 1
             return intern(lg + ":" + term), False, "phantom", True
@@ -616,8 +648,10 @@ def main():
     # the display should say so rather than assert it.
     uncertain = set()
 
-    def note_node(key, word, entry):
-        if key not in node_word:
+    def note_node(key, word, entry, force=False):
+        # citation spellings may reach an entry first (an accented вода́
+        # resolving onto ru:вода) but the page's own word is authoritative
+        if force or key not in node_word:
             node_word[key] = word
         if entry:
             node_entry.add(key)
@@ -711,7 +745,7 @@ def main():
                 if hit:
                     n_ent = norm_n("sid:" + min(hit))
             akey, ask, an = anchored_key(e["c"], e["w"], n_ent)
-            note_node(akey, e["w"], True)
+            note_node(akey, e["w"], True, force=True)
             ctx = tokens(glosses.get(ask + SEP + str(an), "")) | wtok(e["w"])
             have_primary = akey in primary_of
             # "From Middle English concurrent, from Old French concurrent,
@@ -820,7 +854,7 @@ def main():
         r"eye dialect|misspelling|misconstruction|pre-reform|post-reform|"
         r"superseded|uncommon)\s+)*"
         r"(?:form|spelling|typography|romanization|romanisation)\s+of\s+"
-        r"([^,;:.()]+?)[\s.]*$", re.I)
+        r"([^,;:.()]+?)\s*(?:\([^()]*\))?[\s.]*$", re.I)
     n_alt = 0
     for sk_a, ns_a in sense_ns.items():
         c_a, w_a = sk_a.split(SEP, 1)
@@ -837,7 +871,18 @@ def main():
                 continue
             lkey, lentry, _how, _lt = resolve(
                 c_a, tail, set(), set(), tokens(g_a) | wtok(w_a), w_a)
+            if not lentry:
+                # the page spells the lemma enġel; the registry holds engel
+                tail2 = strip_marks(tail)
+                if tail2 != tail:
+                    lkey, lentry, _how, _lt = resolve(
+                        c_a, tail2, set(), set(),
+                        tokens(g_a) | wtok(w_a), w_a)
             if not lentry or lkey == vkey:
+                continue
+            if (vkey, lkey) in edges:
+                # the variant is already cited as the lemma's own parent
+                # (apricot lists apricock); a back-link would be a cycle
                 continue
             if is_affix_term(tail) != is_affix_term(w_a):
                 continue
@@ -862,6 +907,18 @@ def main():
         n_bridge = 0
         for entry_key, ph_key, nxt in pending_ladder:
             if not nxt:
+                # the run ends at this entry; with no next citation to vouch,
+                # accept only a parentless entry (nothing to contradict) that
+                # is word-plausible against the phantom: concurrens closes
+                # concurrent's run, while ontologie (whose page has parents,
+                # among them the very phantom) stays a parallel
+                if childmap.get(entry_key):
+                    continue
+                if not ladder_ok(node_word.get(entry_key, ""), ph_key):
+                    continue
+                if (entry_key, ph_key) not in edges:
+                    add_edge(entry_key, ph_key, "der")
+                    n_bridge += 1
                 continue
             nf = defold(node_word.get(nxt) or nxt.split(":", 1)[1])
             for par in childmap.get(entry_key, ()):
@@ -881,7 +938,7 @@ def main():
                        if not unicodedata.combining(ch))
 
     real = {}
-    for key in node_entry:
+    for key in sorted(node_entry):
         c = key.split(":", 1)[0]
         real.setdefault((c, fold(node_word[key])), key)
     # A participle page with no templates and no descendants never reaches
