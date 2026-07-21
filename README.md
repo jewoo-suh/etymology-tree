@@ -99,14 +99,16 @@ first, then fix it.
 
 ### How the site loads
 
-The deployed page is a small shell (`index.html`, built by
-`build/site.py`) plus two gzipped assets: the core graph
-(`graph-core-<hash>.json.gz`, ~17 MB) fetched with a progress bar and
-unpacked via `DecompressionStream`, and the definitions
-(`gloss-<hash>.json.gz`, ~15 MB) which stream in the background after
-the page is already usable and pop into the panel when ready. Content
-hashes keep revisits cache-clean. The single-file builds from
-`build/bundle.py` remain for offline use (the full one lives on the
+The deployed page is a ~210 KB shell that opens instantly. The graph is
+cut into 512 range shards plus 699 search buckets (build/shards.py);
+typing fetches ~20 KB buckets, and opening a word fetches only the
+shards its chain needs (father: 8 files, under 1 MB), draws at once,
+then streams the sibling fan in behind, rebuilding in place. Two
+proofs gate every deploy: tools/shardcheck.js rebuilds the monolith
+from the shards byte-for-byte, and tools/lazycheck.js runs the shipped
+page script headless in both data modes and requires identical chains
+on all QA golds plus a random sweep. Single-file builds from
+build/bundle.py remain for offline use (the full one lives on the
 GitHub release).
 
 ### Uncertain etymologies

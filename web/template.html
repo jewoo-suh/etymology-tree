@@ -368,7 +368,13 @@
 <script>
 (function () {
   "use strict";
-  var G = JSON.parse(document.getElementById("data").textContent);
+  /* Two data modes share this file. The single-file builds inline the whole
+     graph as G. The deployed site inlines only META (codes, names, counts,
+     search-bucket bounds) and pulls range shards on demand: opening a word
+     costs a few hundred kilobytes, not the whole graph. */
+  var META = window.__SHARDMETA__ || null;
+  var SHARDED = !!META;
+  var G = SHARDED ? null : JSON.parse(document.getElementById("data").textContent);
   var SVGNS = "http://www.w3.org/2000/svg";
 
   /* The payload ships as newline-joined blobs and base36 id lists rather than
@@ -384,18 +390,27 @@
   /* Words are front-coded: each line is a shared-prefix length followed by the
      tail. Sorted forms repeat long prefixes (gramer / gramere / grammer), so
      this takes about a third off the largest blob in the payload. */
-  var WORDS = (function () {
-    var parts = G.words.split("\n"), out = new Array(parts.length), prev = "";
+  function defront(blob, out, base) {
+    if (!blob) return;
+    var parts = blob.split("\n"), prev = "";
     for (var i = 0; i < parts.length; i++) {
       var s = parts[i];
       var w = prev.slice(0, DIGITS.indexOf(s.charAt(0))) + s.slice(1);
-      out[i] = w;
+      out[base + i] = w;
       prev = w;
     }
-    return out;
-  })();
-  var CODES = G.codes, NAMES = G.names;
-  var N = WORDS.length;
+  }
+  var CODES = SHARDED ? META.codes : G.codes;
+  var NAMES = SHARDED ? META.names : G.names;
+  var N = SHARDED ? META.n : 0;
+  var WORDS;
+  if (SHARDED) {
+    WORDS = new Array(N);
+  } else {
+    WORDS = [];
+    defront(G.words, WORDS, 0);
+    N = WORDS.length;
+  }
 
   /* Glosses are kept only for reconstructed forms. An attested word's meaning
      is usually recoverable from its descendants; *ph₂tḗr's is not. */
@@ -409,42 +424,29 @@
     var ids = nums(gd.gids), txt = gd.gtexts ? gd.gtexts.split("\n") : [];
     for (var i = 0; i < ids.length; i++) GLOSS[ids[i]] = txt[i];
   }
-  applyGlosses(G);
+  if (!SHARDED) applyGlosses(G);
   window.__applyGloss = function (gd) {
     applyGlosses(gd);
     /* tree nodes bake their gloss at build time, so rebuild the current
        tree in place while keeping every bit of view state the reader has
        accumulated -- the definitions arriving must never yank the view */
-    if (state.tree && state.tree.q !== undefined) {
-      var keep = { open: state.open, all: state.all, mode: state.mode,
-                   focus: state.focus, sel: state.sel, band: state.bandOpen,
-                   zoom: state.zoom };
-      state.tree = treeFor(state.tree.q);
-      tagFamilies(state.tree.tree);
-      state.open = keep.open;
-      state.all = keep.all;
-      state.mode = keep.mode;
-      state.focus = keep.focus;
-      state.sel = keep.sel;
-      state.bandOpen = keep.band;
-      state.zoom = keep.zoom;
-      state.fit = false;
-      state.scrollTo = false;
-    }
-    render();
+    if (state.tree && state.tree.q !== undefined) rebuildKeepingView();
+    else render();
   };
 
   /* Nodes sort by "code:word", so each language is one contiguous run and the
      per-node language list ships as ~3.5k run lengths instead of 577k numbers. */
-  var WLANG = new Uint16Array(N);
-  (function () {
-    var pos = 0, runs = G.wrle.split(",");
+  var WLANG = SHARDED ? new Array(N) : new Uint16Array(N);
+  function fillRuns(blob, base) {
+    if (!blob) return;
+    var pos = base, runs = blob.split(",");
     for (var i = 0; i < runs.length; i++) {
       var s = runs[i], c = s.indexOf(":");
       var lang = parseInt(s.slice(0, c), 36), n = parseInt(s.slice(c + 1), 36);
       for (var j = 0; j < n; j++) WLANG[pos++] = lang;
     }
-  })();
+  }
+  if (!SHARDED) fillRuns(G.wrle, 0);
 
   /* Relations are not interchangeable, so each edge carries its kind: inherited
      down the family line, borrowed across from another language, or a `root`
@@ -457,7 +459,7 @@
   var PRIM = new Set();
   var PRIMPAR = new Array(N);
   var UNC = new Set();
-  (function () {
+  if (!SHARDED) (function () {
     var bin = atob(G.kinds);
     var pbin = G.prim ? atob(G.prim) : null;
     var ubin = G.unc ? atob(G.unc) : null;
@@ -485,6 +487,161 @@
       DOWNK[p] = ka;
     }
   })();
+
+  /* ---- shard manager --------------------------------------------------
+     Shards are range slices of the same arrays: s0 holds ids 0..K-1. Any
+     traversal that touches an unloaded id records the missing shard in
+     MISSED and carries on with what it has; prepare() then fetches the
+     missing shards and reruns until a pass completes with nothing missing.
+     The result is byte-identical to the monolith run, arriving lazily. */
+  var SHK = SHARDED ? META.k : 1;
+  var RCPRE = SHARDED ? new Array(N) : null;
+  var SHLOADED = SHARDED ? new Uint8Array(META.shards) : null;
+  var MISSED = new Set();
+  var EMPTY = [];
+  function needSh(i) {
+    if (SHARDED && !SHLOADED[(i / SHK) | 0]) MISSED.add((i / SHK) | 0);
+  }
+  function upList(i) { needSh(i); return UP[i] || EMPTY; }
+  function upKinds(i) { needSh(i); return UPK[i] || EMPTY; }
+  function downList(i) { needSh(i); return DOWN[i] || EMPTY; }
+  function downKinds(i) { needSh(i); return DOWNK[i] || EMPTY; }
+
+  function gunzip(resp) {
+    var ds = new DecompressionStream("gzip");
+    return new Response(resp.body.pipeThrough(ds)).text();
+  }
+  var shardWaits = {};
+  function loadShard(s) {
+    if (!SHARDED || SHLOADED[s]) return Promise.resolve();
+    if (shardWaits[s]) return shardWaits[s];
+    shardWaits[s] = fetch("shards/s" + s + ".json.gz?v=" + META.v)
+      .then(function (r) {
+        if (!r.ok) throw new Error("shard " + s + ": HTTP " + r.status);
+        return gunzip(r);
+      })
+      .then(function (txt) {
+        integrate(s, JSON.parse(txt));
+        delete shardWaits[s];
+      });
+    return shardWaits[s];
+  }
+  function integrate(s, sh) {
+    var lo = s * SHK;
+    defront(sh.w, WORDS, lo);
+    fillRuns(sh.l, lo);
+    var chunks, i2, gt, loc, parts, j2, dot, other, f;
+    if (sh.d) {
+      chunks = sh.d.split(";");
+      for (i2 = 0; i2 < chunks.length; i2++) {
+        gt = chunks[i2].indexOf(">");
+        loc = lo + parseInt(chunks[i2].slice(0, gt), 36);
+        parts = chunks[i2].slice(gt + 1).split(",");
+        var arr = new Array(parts.length), ka = new Array(parts.length);
+        for (j2 = 0; j2 < parts.length; j2++) {
+          dot = parts[j2].lastIndexOf(".");
+          other = parseInt(parts[j2].slice(0, dot), 36);
+          f = parseInt(parts[j2].slice(dot + 1), 36);
+          arr[j2] = other;
+          ka[j2] = f & 3;
+        }
+        DOWN[loc] = arr;
+        DOWNK[loc] = ka;
+      }
+    }
+    if (sh.u) {
+      chunks = sh.u.split(";");
+      for (i2 = 0; i2 < chunks.length; i2++) {
+        gt = chunks[i2].indexOf(">");
+        loc = lo + parseInt(chunks[i2].slice(0, gt), 36);
+        parts = chunks[i2].slice(gt + 1).split(",");
+        var pa = new Array(parts.length), pk = new Array(parts.length);
+        for (j2 = 0; j2 < parts.length; j2++) {
+          dot = parts[j2].lastIndexOf(".");
+          other = parseInt(parts[j2].slice(0, dot), 36);
+          f = parseInt(parts[j2].slice(dot + 1), 36);
+          pa[j2] = other;
+          pk[j2] = f & 3;
+          if (f & 4) {
+            PRIM.add(other * N + loc);
+            (PRIMPAR[loc] || (PRIMPAR[loc] = [])).push(other);
+          }
+          if (f & 8) UNC.add(other * N + loc);
+        }
+        UP[loc] = pa;
+        UPK[loc] = pk;
+      }
+    }
+    if (sh.g) {
+      var gi = sh.g.split(","), gtx = sh.gt.split("\n");
+      for (i2 = 0; i2 < gi.length; i2++) {
+        GLOSS[lo + parseInt(gi[i2], 36)] = gtx[i2];
+      }
+    }
+    if (sh.r) {
+      var rp = sh.r.split(",");
+      for (i2 = 0; i2 < rp.length; i2++) {
+        dot = rp[i2].indexOf(".");
+        RCPRE[lo + parseInt(rp[i2].slice(0, dot), 36)] =
+          parseInt(rp[i2].slice(dot + 1), 36);
+      }
+    }
+    SHLOADED[s] = 1;
+  }
+  function fetchMissing() {
+    var want = [];
+    MISSED.forEach(function (s) { want.push(s); });
+    MISSED.clear();
+    return Promise.all(want.map(loadShard));
+  }
+  function prepare(id) {
+    if (!SHARDED) return Promise.resolve();
+    var rounds = 0;
+    return loadShard((id / SHK) | 0).then(function pass() {
+      MISSED.clear();
+      rcReset();
+      climb(id);
+      if (!MISSED.size || ++rounds > 40) {
+        /* chain closed; one tree pass seeds the sibling fan for pump() */
+        MISSED.clear();
+        treeFor(id);
+        return null;
+      }
+      return fetchMissing().then(pass);
+    });
+  }
+  /* after the chain is up, keep pulling whatever the full tree still lacks
+     and rebuild in place; the reader watches branches fill in */
+  function pump(tok) {
+    if (!SHARDED || tok !== openSeq) return;
+    if (!MISSED.size) { wordSpin(false); return; }
+    wordSpin("filling branches\u2026 " + MISSED.size + " parts to go");
+    fetchMissing().then(function () {
+      if (tok !== openSeq) return;
+      rcReset();
+      MISSED.clear();
+      rebuildKeepingView();
+      pump(tok);
+    }, function () { wordSpin(false); });
+  }
+  function rebuildKeepingView() {
+    if (!state.tree || state.tree.q === undefined) return;
+    var keep = { open: state.open, all: state.all, mode: state.mode,
+                 focus: state.focus, sel: state.sel, band: state.bandOpen,
+                 zoom: state.zoom };
+    state.tree = treeFor(state.tree.q);
+    tagFamilies(state.tree.tree);
+    state.open = keep.open;
+    state.all = keep.all;
+    state.mode = keep.mode;
+    state.focus = keep.focus;
+    state.sel = keep.sel;
+    state.bandOpen = keep.band;
+    state.zoom = keep.zoom;
+    state.fit = false;
+    state.scrollTo = false;
+    render();
+  }
   /* A word's own page names its parent; where it does, route exploration may
      only enter that word along it. es:aguacate cites Classical Nahuatl
      ahuacatl, and a stray descendants edge from Pipil ahuacat (read on its
@@ -503,7 +660,7 @@
        parts: uisce beatha's dead phantom aqua vītae must not hand the chain
        to beatha "life" and rewrite whiskey as a descendant of living. */
     for (var i = 0; i < pp.length; i++) {
-      if ((UP[pp[i]] || []).length) return false;
+      if (upList(pp[i]).length) return false;
     }
     /* kind 3 covers both word-formation and cross-language derivation;
        parts are same-language by construction, so only those stay barred
@@ -512,16 +669,16 @@
     return k !== K_DER || code(par) !== code(child);
   }
   function uncertainEdge(par, child) { return UNC.has(par * N + child); }
-  function kids(id) { return DOWN[id] || []; }
-  function parents(id) { return UP[id] || []; }
+  function kids(id) { return downList(id); }
+  function parents(id) { return upList(id); }
   function kindOf(p, c) {
-    var a = DOWN[p], k = DOWNK[p];
-    if (!a) return K_INH;
+    var a = downList(p), k = downKinds(p);
+    if (!a.length) return K_INH;
     for (var i = 0; i < a.length; i++) if (a[i] === c) return k[i];
     return K_INH;
   }
 
-  function code(id) { return CODES[WLANG[id]]; }
+  function code(id) { needSh(id); return CODES[WLANG[id]] || ""; }
   function langName(id) { return NAMES[WLANG[id]] || CODES[WLANG[id]]; }
   function isRecon(id) { return code(id).indexOf("-pro") > -1; }
   function isBareRoot(id) {
@@ -583,6 +740,7 @@
      with a trailing hyphen (*gerbʰ-) and must stay, so the test is: a leading
      hyphen is always an affix, a trailing one only outside proto-languages. */
   function isAffix(id) {
+    needSh(id);
     var w = WORDS[id];
     if (!w) return false;
     var a = w.charAt(0), z = w.charAt(w.length - 1);
@@ -594,7 +752,7 @@
     var parentOf = {}, depth = {}, q = [id], i = 0;
     depth[id] = 0;
     while (i < q.length) {
-      var cur = q[i++], ps = UP[cur] || [], ks = UPK[cur] || [];
+      var cur = q[i++], ps = upList(cur), ks = upKinds(cur);
       for (var j = 0; j < ps.length; j++) {
         if (!allow[ks[j]]) continue;
         var p = ps[j];
@@ -623,7 +781,7 @@
       var seen = {}, q = [b], i = 0;
       seen[b] = 1;
       while (i < q.length && q.length < 4000) {
-        var cur = q[i++], ps = UP[cur] || [], ks = UPK[cur] || [];
+        var cur = q[i++], ps = upList(cur), ks = upKinds(cur);
         for (var j = 0; j < ps.length; j++) {
           if (!allow[ks[j]]) continue;
           var p = ps[j];
@@ -651,7 +809,7 @@
       if (memo[cur] !== undefined) return memo[cur];
       if (onStack[cur]) return null;          // cycle: ignore this way round
       onStack[cur] = 1;
-      var ks = DOWN[cur] || [], kk = DOWNK[cur] || [], found = null;
+      var ks = downList(cur), kk = downKinds(cur), found = null;
       for (var i = 0; i < ks.length; i++) {
         var c = ks[i];
         if (!allow[kk[i]] || inSet[c] === undefined || !primOK(cur, c, kk[i])) continue;
@@ -717,7 +875,7 @@
     var seen = {};
     for (var i = 0; i < route.length; i++) seen[route[i]] = 1;
     for (var step = 0; step < 6; step++) {
-      var top = route[0], ps = UP[top] || [];
+      var top = route[0], ps = upList(top);
       var best = -1, bn = -1;
       for (var j = 0; j < ps.length; j++) {
         var p = ps[j];
@@ -749,7 +907,7 @@
     var route = [id], cur = id, seen = {};
     seen[id] = 1;
     for (var step = 0; step < 30; step++) {
-      var ps = UP[cur] || [], next = -1;
+      var ps = upList(cur), next = -1;
       for (var j = 0; j < ps.length; j++) {
         var q = ps[j];
         if (!PRIM.has(q * N + cur) || seen[q] || isAffix(q)) continue;
@@ -837,8 +995,13 @@
   }
 
   var reachMemo = {};
+  function rcReset() { reachMemo = {}; }
   function reachCount(id) {
     if (reachMemo[id] !== undefined) return reachMemo[id];
+    /* the build ships the exact count for bare proto roots, the only ids
+       the climb consults en masse, so the lazy page skips their sweeps */
+    if (SHARDED && RCPRE[id] !== undefined) return (reachMemo[id] = RCPRE[id]);
+    var before = MISSED.size;
     var seen = {}, q = [id], i = 0;
     seen[id] = 1;
     while (i < q.length && q.length < 20000) {
@@ -847,6 +1010,9 @@
         if (!seen[ks[j]]) { seen[ks[j]] = 1; q.push(ks[j]); }
       }
     }
+    // a count taken while shards were missing must not be memoised: the
+    // prepare() rerun will take it again on complete data
+    if (SHARDED && MISSED.size > before) return q.length - 1;
     return (reachMemo[id] = q.length - 1);
   }
 
@@ -862,7 +1028,7 @@
     var line = [id], seen = {}, cur = id;
     seen[id] = 1;
     for (var step = 0; step < 4; step++) {
-      var ps = UP[cur] || [], ks = UPK[cur] || [], pick = -1, best = -1;
+      var ps = upList(cur), ks = upKinds(cur), pick = -1, best = -1;
       for (var i = 0; i < ps.length; i++) {
         if (ks[i] === K_ROOT || seen[ps[i]]) continue;
         if (ks[i] === K_DER && code(ps[i]) === code(cur)) continue;  // sideways
@@ -890,7 +1056,7 @@
     var seen = {}, q = [id], i = 0;
     seen[id] = 1;
     while (i < q.length && q.length < limit) {
-      var ks = DOWN[q[i]] || [], kk = DOWNK[q[i]] || [];
+      var ks = downList(q[i]), kk = downKinds(q[i]);
       i++;
       for (var j = 0; j < ks.length; j++) {
         if (kk[j] === K_ROOT && !withRoot) continue;
@@ -911,7 +1077,7 @@
      deep tree into a starburst. If a child is reachable from one of its own
      siblings, the edge to it is a shortcut and the longer road already shows it. */
   function directChildren(id, withRoot, chainSet) {
-    var ks = kids(id), kk = DOWNK[id] || [];
+    var ks = kids(id), kk = downKinds(id);
     var out = [];
     for (var i = 0; i < ks.length; i++) {
       if (isAffix(ks[i])) continue;
@@ -958,7 +1124,7 @@
          built from" is being asked about one word, not about all of them. */
       var others = [];
       if (from !== undefined && id === qid) {
-        var ps = UP[id] || [], ks = UPK[id] || [];
+        var ps = upList(id), ks = upKinds(id);
         for (var q = 0; q < ps.length; q++) {
           if (ps[q] === from || ks[q] === K_ROOT) continue;
           /* Only components of a compound, meaning same-language word-formation.
@@ -1006,7 +1172,7 @@
      Branch from Latin grammatica instead and the tree is the 50 European words
      for grammar, with *gerbʰ- still named as the ultimate origin. */
   function originsOf(id, skip) {
-    var out = [], ps = UP[id] || [], ks = UPK[id] || [];
+    var out = [], ps = upList(id), ks = upKinds(id);
     for (var i = 0; i < ps.length; i++) {
       if (ks[i] === K_ROOT || ps[i] === skip) continue;
       out.push({ id: ps[i], kind: ks[i] });
@@ -1122,6 +1288,63 @@
     }
     exact.sort(rank); starts.sort(rank); has.sort(rank);
     return exact.concat(starts, has).slice(0, 45);
+  }
+
+  var bucketCache = {};
+  function loadBucket(i) {
+    if (!SHARDED || i < 0 || i >= META.buckets) return Promise.resolve(null);
+    if (bucketCache[i]) return bucketCache[i];
+    bucketCache[i] = fetch("shards/q" + i + ".json.gz?v=" + META.v)
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return gunzip(r);
+      })
+      .then(function (txt) {
+        var b = JSON.parse(txt);
+        var out = { w: b.w.split("\n"), l: nums(b.l), i: nums(b.i),
+                    d: nums(b.d) };
+        out.f = out.w.map(fold);
+        return out;
+      });
+    return bucketCache[i];
+  }
+  function searchSharded(qs) {
+    var f = fold(qs.trim());
+    if (!f) return Promise.resolve([]);
+    /* buckets are sorted by folded word; binary-search the bounds, then
+       read that bucket and its neighbour, since a prefix run can straddle
+       the seam */
+    var lo = 0, hi = META.bounds.length - 1;
+    while (lo < hi) {
+      var mid = (lo + hi + 1) >> 1;
+      if (META.bounds[mid] <= f) lo = mid; else hi = mid - 1;
+    }
+    var raw = qs.trim();
+    return Promise.all([loadBucket(lo), loadBucket(lo + 1)])
+      .then(function (bs) {
+        var exact = [], starts = [];
+        bs.forEach(function (b) {
+          if (!b) return;
+          for (var i = 0; i < b.f.length; i++) {
+            if (b.f[i] === f) {
+              exact.push({ id: b.i[i], w: b.w[i], l: b.l[i], d: b.d[i] });
+            } else if (starts.length < 400 && b.f[i].indexOf(f) === 0) {
+              starts.push({ id: b.i[i], w: b.w[i], l: b.l[i], d: b.d[i] });
+            }
+          }
+        });
+        function rank2(a, b) {
+          var ca = a.w === raw ? 0 : 1, cb = b.w === raw ? 0 : 1;
+          if (ca !== cb) return ca - cb;
+          if (a.d !== b.d) return b.d - a.d;
+          return a.w.length - b.w.length;
+        }
+        exact.sort(rank2);
+        starts.sort(rank2);
+        return exact.concat(starts).slice(0, 45).map(function (h) {
+          return { id: h.id, w: h.w, l: h.l, deg: h.d };
+        });
+      });
   }
 
   /* ---- view ---------------------------------------------------------- */
@@ -1265,7 +1488,7 @@
      the same weight, converging on the word. teach arrives from above, -er from
      below, and they meet. */
   function formationOf(id) {
-    var ps = UP[id] || [], ks = UPK[id] || [], comps = [];
+    var ps = upList(id), ks = upKinds(id), comps = [];
     for (var i = 0; i < ps.length && comps.length < 4; i++) {
       if (ks[i] !== K_DER || code(ps[i]) !== code(id)) continue;
       comps.push(componentChain(ps[i]));
@@ -1740,7 +1963,7 @@
     var gAff = svgEl("g", {});
     all.forEach(function (p) {
       if (p.data.more || p.data.ghost !== undefined || !p.data.n.path) return;
-      var n = p.data.n, ps = UP[n.id] || [], ks = UPK[n.id] || [];
+      var n = p.data.n, ps = upList(n.id), ks = upKinds(n.id);
       var shown = 0;
       for (var j = 0; j < ps.length && shown < 2; j++) {
         var q = ps[j];
@@ -1792,7 +2015,7 @@
          cannot route through an affix, so teacher reads "teach → teacher" and
          the -er that actually shapes the word appears nowhere. Say it here. */
       var prev = i ? (T.chain || [])[i - 1] : -1;
-      var ps = UP[step] || [], ks = UPK[step] || [], parts = [];
+      var ps = upList(step), ks = upKinds(step), parts = [];
       for (var pi = 0; pi < ps.length && parts.length < 3; pi++) {
         if (ks[pi] !== K_DER || code(ps[pi]) !== code(step) || ps[pi] === prev) continue;
         parts.push(ps[pi]);
@@ -1892,7 +2115,7 @@
       /* Anything drawn at the top of the tree still has recorded parents; not
          showing them reads as "this word came from nowhere". */
       var ups = [];
-      var pl = UP[n.id] || [], kl = UPK[n.id] || [];
+      var pl = upList(n.id), kl = upKinds(n.id);
       for (var pi = 0; pi < pl.length; pi++) {
         if (kl[pi] !== K_ROOT) ups.push({ id: pl[pi], kind: kl[pi] });
       }
@@ -2015,7 +2238,40 @@
     box.appendChild(leg);
   }
 
+  var openSeq = 0;
   function open(id, forceRoot) {
+    if (!SHARDED) return openNow(id, forceRoot);
+    var tok = ++openSeq;
+    wordSpin(true);
+    prepare(id).then(function () {
+      if (tok !== openSeq) return;
+      openNow(id, forceRoot);
+      pump(tok);
+    }, function (e) {
+      if (tok === openSeq) {
+        wordSpin("could not load that word (" + e.message + ")");
+        setTimeout(function () { wordSpin(false); }, 4000);
+      }
+    });
+  }
+  function wordSpin(on) {
+    var el2 = document.getElementById("wordspin");
+    if (!el2) {
+      el2 = document.createElement("div");
+      el2.id = "wordspin";
+      el2.setAttribute("style", "position:fixed;top:14px;left:50%;" +
+        "transform:translateX(-50%);background:var(--surface,#222);" +
+        "color:var(--ink,#ddd);border:1px solid var(--line,#444);" +
+        "border-radius:999px;padding:6px 16px;font-size:13px;z-index:60;" +
+        "box-shadow:0 4px 14px rgba(0,0,0,.15);");
+      document.body.appendChild(el2);
+    }
+    if (on === false) { el2.style.display = "none"; return; }
+    el2.style.display = "";
+    el2.textContent = typeof on === "string" ? on
+      : "fetching this word\u2019s corner of the graph\u2026";
+  }
+  function openNow(id, forceRoot) {
     state.tree = treeFor(id, forceRoot);
     // a word made of parts opens on how it was made; everything else on descent
     state.mode = (state.tree.formation && forceRoot === undefined) ? "form" : "tree";
@@ -2046,36 +2302,56 @@
       if (qEl.value.trim()) resBox.appendChild(el("div", "nores", "No word matches that."));
       return;
     }
-    hits.forEach(function (id, i) {
+    hits.forEach(function (h, i) {
+      var id = SHARDED ? h.id : h;
+      var codeStr = SHARDED ? CODES[h.l] : code(id);
+      var wordStr = SHARDED ? h.w : WORDS[id];
+      var recon = codeStr.indexOf("-pro") > -1;
       var b = el("button", "res" + (i === cur ? " cur" : ""));
       b.type = "button";
       var sw = el("span", "swatch");
-      sw.style.setProperty("--c", "var(--fam-" + (FAMVAR[code(id)] || "oth") + ")");
+      sw.style.setProperty("--c", "var(--fam-" + (FAMVAR[codeStr] || "oth") + ")");
       b.appendChild(sw);
-      b.appendChild(el("span", "w" + (isRecon(id) ? " recon" : ""), labelOf(id)));
-      b.appendChild(el("span", "lg", langName(id)));
-      if (GLOSS[id]) b.appendChild(el("span", "gl", GLOSS[id]));
+      b.appendChild(el("span", "w" + (recon ? " recon" : ""),
+                       (recon ? "*" : "") + wordStr));
+      b.appendChild(el("span", "lg",
+                       SHARDED ? (NAMES[h.l] || codeStr) : langName(id)));
+      if (!SHARDED && GLOSS[id]) b.appendChild(el("span", "gl", GLOSS[id]));
       /* Two entries can be spelt the same in the same language -- sugar the
          noun and Sugar the surname -- and without glosses they read alike.
          Reach tells them apart: 24 descendants against one. */
-      var n = kids(id).length;
-      if (n) b.appendChild(el("span", "cnt", n + (n === 1 ? " descendant" : " descendants")));
+      var n = SHARDED ? h.deg : kids(id).length;
+      if (n) b.appendChild(el("span", "cnt",
+        n + (SHARDED ? (n === 1 ? " link" : " links")
+                     : (n === 1 ? " descendant" : " descendants"))));
       b.addEventListener("click", function () {
         open(id); resBox.textContent = ""; qEl.blur();
       });
       resBox.appendChild(b);
     });
   }
+  var searchSeq = 0;
   qEl.addEventListener("input", function () {
-    hits = search(qEl.value);
-    cur = hits.length ? 0 : -1;
-    paintResults();
+    if (!SHARDED) {
+      hits = search(qEl.value);
+      cur = hits.length ? 0 : -1;
+      paintResults();
+      return;
+    }
+    var tok = ++searchSeq;
+    searchSharded(qEl.value).then(function (list) {
+      if (tok !== searchSeq) return;
+      hits = list;
+      cur = hits.length ? 0 : -1;
+      paintResults();
+    });
   });
   qEl.addEventListener("keydown", function (e) {
     if (e.key === "ArrowDown") { cur = Math.min(cur + 1, hits.length - 1); paintResults(); e.preventDefault(); }
     else if (e.key === "ArrowUp") { cur = Math.max(cur - 1, 0); paintResults(); e.preventDefault(); }
     else if (e.key === "Enter" && hits[cur] !== undefined) {
-      open(hits[cur]); resBox.textContent = ""; qEl.blur();
+      open(SHARDED ? hits[cur].id : hits[cur]);
+      resBox.textContent = ""; qEl.blur();
     } else if (e.key === "Escape") { resBox.textContent = ""; qEl.blur(); }
   });
   document.addEventListener("click", function (e) {
@@ -2199,14 +2475,18 @@
 
   /* ---- examples ------------------------------------------------------ */
   var KEYIDX = {};
-  for (var i = 0; i < N; i++) {
-    // homographs share a spelling; keep the first, which is etymology 1
-    if (KEYIDX[keyOf(i)] === undefined) KEYIDX[keyOf(i)] = i;
+  if (SHARDED) {
+    META.starters.forEach(function (pair) { KEYIDX[pair[0]] = pair[1]; });
+  } else {
+    for (var i = 0; i < N; i++) {
+      // homographs share a spelling; keep the first, which is etymology 1
+      if (KEYIDX[keyOf(i)] === undefined) KEYIDX[keyOf(i)] = i;
+    }
   }
 
   var picker = document.getElementById("picker");
   ["en:father", "en:water", "en:night", "en:star", "en:wheel",
-   "la:pater", "grc:πατήρ", "sa:पितृ", "ru:вода́", "hy:հայր",
+   "la:pater", "grc:πατήρ", "sa:पितृ", "ru:вода", "hy:հայր",
    "ga:athair", "is:hjarta", "cy:mam", "sq:natë"].forEach(function (k) {
     var id = KEYIDX[k];
     if (id === undefined) return;
@@ -2215,11 +2495,28 @@
     b.dataset.id = id;
     b.setAttribute("aria-pressed", "false");
     b.appendChild(el("span", "code", k.split(":")[0]));
-    b.appendChild(document.createTextNode(WORDS[id]));
-    b.title = langName(id);
+    b.appendChild(document.createTextNode(
+      SHARDED ? k.split(":")[1] : WORDS[id]));
+    b.title = SHARDED
+      ? (NAMES[CODES.indexOf(k.split(":")[0])] || k.split(":")[0])
+      : langName(id);
     b.addEventListener("click", function () { open(id); });
     picker.appendChild(b);
   });
+
+  /* test hook: tools/lazycheck.js runs this same script headless in both
+     data modes and compares the chains it computes */
+  window.__test = { prepare: prepare, treeFor: treeFor, KEYIDX: KEYIDX,
+    drain: function (id) {
+      function step() {
+        MISSED.clear();
+        rcReset();
+        treeFor(id);
+        if (!MISSED.size) return Promise.resolve();
+        return fetchMissing().then(step);
+      }
+      return step();
+    } };
 
   open(KEYIDX["en:father"] !== undefined ? KEYIDX["en:father"] : 0);
 })();
