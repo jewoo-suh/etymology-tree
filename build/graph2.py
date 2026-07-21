@@ -644,6 +644,44 @@ def main():
                 walk_desc(nd["d"], ckey if trusted else parent_key,
                           (hint or parent_ctx) | wtok(w))
 
+    def scriptclass(w):
+        for ch in w:
+            o = ord(ch)
+            if o > 64:
+                return o >> 8
+        return 0
+
+    def ladder_ok(deep_term, shallow_key):
+        """A ladder edge asserts descent between two spellings the citing
+        page lines up. Different scripts may look arbitrarily unalike
+        (oryza -> riso), but within one script the words should share a
+        prefix: rif -> ris (2 letters) is the reef lexeme colliding with
+        the rice phantom, not a descent."""
+        a = defold(deep_term).lstrip("*")
+        b = defold(shallow_key.split(":", 1)[1]).lstrip("*")
+        if not a or not b:
+            return False
+        if scriptclass(a) != scriptclass(b):
+            return True
+        n = 0
+        m = min(len(a), len(b))
+        while n < m and a[n] == b[n]:
+            n += 1
+        if n >= 3:
+            return True
+        # zingiberi/gingiber share no prefix but seven interior letters;
+        # rif/ris share two letters however you slice them
+        best = 0
+        for i2 in range(len(a)):
+            for j2 in range(len(b)):
+                k2 = 0
+                while (i2 + k2 < len(a) and j2 + k2 < len(b)
+                       and a[i2 + k2] == b[j2 + k2]):
+                    k2 += 1
+                if k2 > best:
+                    best = k2
+        return best >= 4
+
     pending_ladder = []
     done = 0
     with io.open(os.path.join(EX, "source2.jsonl"), encoding="utf-8") as fh:
@@ -706,7 +744,8 @@ def main():
                     prev_key, prev_entry = None, True
                 if (prev_key is not None and not prev_entry and not entry
                         and kind not in ("root", "form") and trusted
-                        and pkey != prev_key and not is_affix_term(term)):
+                        and pkey != prev_key and not is_affix_term(term)
+                        and ladder_ok(term, prev_key)):
                     # both ends phantom: a real entry ends the "from X, from
                     # Y" run -- pages also write "compare French ontologie"
                     # after a coinage, and that is parallelism, not descent
@@ -752,6 +791,46 @@ def main():
 
     print("  resolution: " + "   ".join(
         "{} {:,}".format(k, v) for k, v in stats.most_common()), flush=True)
+
+    # An alternative-form entry has no templates of its own; its gloss is
+    # the link. "alternative form of gingivere" hands gingere the lemma
+    # whose page carries the whole spice-trade ladder.
+    ALTGLOSS = re.compile(
+        r"^(?:(?:alternative|alternate|obsolete|archaic|dialectal|rare|"
+        r"nonstandard|dated|early|later|medieval|informal|poetic|humorous|"
+        r"eye dialect|misspelling|misconstruction|pre-reform|post-reform|"
+        r"superseded|uncommon)\s+)*"
+        r"(?:form|spelling|typography|romanization|romanisation)\s+of\s+"
+        r"([^,;:.()]+?)[\s.]*$", re.I)
+    n_alt = 0
+    for sk_a, ns_a in sense_ns.items():
+        c_a, w_a = sk_a.split(SEP, 1)
+        for n_a in ns_a:
+            g_a = glosses.get(sk_a + SEP + str(n_a), "")
+            m_a = ALTGLOSS.match(g_a)
+            if not m_a:
+                continue
+            tail = m_a.group(1).strip()
+            if not tail or len(tail.split()) > 3 or defold(tail) == defold(w_a):
+                continue
+            vkey = kf(sk_a, n_a, ns_a)
+            if vkey not in node_word:
+                continue
+            lkey, lentry, _how, _lt = resolve(
+                c_a, tail, set(), set(), tokens(g_a) | wtok(w_a), w_a)
+            if not lentry or lkey == vkey:
+                continue
+            if is_affix_term(tail) != is_affix_term(w_a):
+                continue
+            note_node(lkey, tail.lstrip("*").strip(), True)
+            add_edge(lkey, vkey, "der")
+            # the lemma IS the variant page's stated origin; if nothing else
+            # claims the primary slot, this link is the page walk
+            if vkey not in primary_of:
+                primary.add((lkey, vkey))
+                primary_of.add(vkey)
+            n_alt += 1
+    print("alt-form lemma links: {:,}".format(n_alt), flush=True)
 
     # A held phantom-then-entry pair joins the ladder only if the citation
     # after the entry names one of the entry's own recorded parents: the
@@ -862,6 +941,21 @@ def main():
             skipped += 1
             continue
         alias[key] = tgt
+    # medieval, new and late Latin phantoms of one spelling are one word;
+    # unfolded they keep ladders apart (la-med:gingiber vs la-lat:gingiber)
+    n_lvar = 0
+    for key in list(node_word):
+        if key in node_entry or key in alias:
+            continue
+        c_v = key.split(":", 1)[0]
+        if c_v in LANGVAR:
+            tgt2 = LANGVAR[c_v] + ":" + key.split(":", 1)[1]
+            if tgt2 != key:
+                if tgt2 not in node_word:
+                    node_word[tgt2] = node_word[key]
+                alias[key] = tgt2
+                n_lvar += 1
+    print("latin-variant phantoms folded: {:,}".format(n_lvar), flush=True)
     for key, tgt in alias.items():
         if tgt not in node_word:
             node_word[tgt] = tgt.split(":", 1)[1]
@@ -869,11 +963,18 @@ def main():
     print("diacritic phantoms redirected: {:,}   kept as phantoms: {:,}".format(
         len(alias), skipped), flush=True)
     if alias:
+        def unalias(k):
+            # folding can chain: la-med:-alis -> la:-alis -> the entry
+            hops = 0
+            while k in alias and hops < 6:
+                k = alias[k]
+                hops += 1
+            return k
         remapped = {}
         reprim = set()
         reunc = set()
         for (p, c), kind in edges.items():
-            p2, c2 = alias.get(p, p), alias.get(c, c)
+            p2, c2 = unalias(p), unalias(c)
             if p2 == c2:
                 continue
             if (p, c) in primary:

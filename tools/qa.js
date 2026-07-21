@@ -72,6 +72,9 @@ const TESTS = [
   { w: 'en:zero', must: ['शून्य|صفر'], banL: [], banG: [] },
   { w: 'en:cipher', must: ['صفر|cifra'], banL: [], banG: [] },
   { w: 'en:-er', must: ['ārijaz|arijaz|-ere'], banL: [], banG: [] },
+  { w: 'en:rice', must: ['ὄρυζα|riso'], banL: ['rif'], banG: ['reef', 'rib'] },
+  { w: 'en:ginger', must: ['ζιγγίβερις|zingiber'], banL: [], banG: [] },
+  { w: 'en:dragon', must: ['δράκων'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------
