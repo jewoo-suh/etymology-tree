@@ -46,11 +46,12 @@ const TESTS = [
   { w: 'de:Vater', must: ['fadēr'], banL: [], banG: [] },
   { w: 'fr:père', must: ['pater'], banL: [], banG: [] },
   { w: 'es:agua', must: ['aqua'], banL: [], banG: [] },
-  { w: 'ru:вода́', must: ['voda|вода'], banL: [], banG: [] },
+  { w: 'ru:вода', must: ['voda'], banL: [], banG: [] },
   { w: 'en:whisky', must: ['uisge|uisce'], banL: [], banG: [] },
   { w: 'en:name', must: ['h₁nómn̥|nama'], banL: [], banG: [] },
   { w: 'en:salt', must: ['salt'], banL: [], banG: [] },
   { w: 'en:communism', must: ['communisme', 'communis'], banL: [], banG: [] },
+  { w: 'en:bear', must: ['bera'], banL: [], banG: ['pierce'] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

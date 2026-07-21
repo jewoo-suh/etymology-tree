@@ -72,6 +72,21 @@ def norm_n(v):
     return 1000 + (zlib.adler32(str(v).encode("utf-8")) % 8999)
 
 
+def own_etymon_ids(tmpls):
+    """Ids declared by argless etymon templates: on pages that never number
+    their etymology sections (reconstruction pages especially), each section
+    still announces its identity as {{etymon|xx|id=...}} with no parent arg.
+    Two distinct ids on one page = two homographs sharing a key."""
+    ids = set()
+    for t in tmpls or []:
+        if t.get("n") != "etymon":
+            continue
+        a = t.get("a") or {}
+        if a.get("id") and not a.get("3"):
+            ids.add(a["id"])
+    return ids
+
+
 MOD = re.compile(r"<([a-z0-9]+):([^<>]*)>")
 TOK = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
 STOP = {"the", "of", "and", "to", "in", "an", "or", "for", "with", "from",
@@ -251,6 +266,7 @@ def main():
     # ---- pass 1: which spellings does the graph touch at all? -------------
     print("pass 1: collecting referenced spellings", flush=True)
     cand = set()
+    page_ids = collections.defaultdict(set)
 
     def note_ref(lg, term):
         cand.add(intern(lg + SEP + term.lstrip("*").strip()))
@@ -272,12 +288,18 @@ def main():
             e = json.loads(line)
             n_src += 1
             note_ref(e["c"], e["w"])
+            for _id in own_etymon_ids(e.get("t")):
+                page_ids[e["c"] + SEP + e["w"]].add(_id)
             for kind, lg, term, _g, _i in parse_templates(e.get("t") or [], e["c"]):
                 note_ref(lg, term)
             if e.get("d"):
                 walk_refs(e["d"])
+    split_sid = {sk: ids for sk, ids in page_ids.items() if len(ids) > 1}
+    page_ids = None
     print("  {:,} source entries, {:,} distinct spellings touched".format(
         n_src, len(cand)), flush=True)
+    print("  {:,} unnumbered homograph pages split by etymon id".format(
+        len(split_sid)), flush=True)
 
     # ---- pass 2: sense registry for those spellings ------------------------
     print("pass 2: sense registry", flush=True)
@@ -295,11 +317,19 @@ def main():
             if sk not in cand:
                 continue
             n = norm_n(r.get("n", 0))
+            pref = r["c"] + ":"
+            bare = {x[len(pref):] if x.startswith(pref) else x
+                    for x in r.get("s") or []}
+            if n == 0 and sk in split_sid:
+                hit = bare & split_sid[sk]
+                if hit:
+                    n = norm_n("sid:" + min(hit))
             raw_ns[sk].add(n)
             gk = sk + SEP + str(n)
             if r.get("g") and gk not in glosses:
                 glosses[gk] = r["g"]
-            for sid in r.get("s") or []:
+            # senseids arrive lang-prefixed here but bare in <id:...> hints
+            for sid in set(r.get("s") or []) | bare:
                 sidmap.setdefault(sk + SEP + sid, n)
 
     multi = 0
@@ -468,7 +498,12 @@ def main():
             if not line:
                 continue
             e = json.loads(line)
-            akey, ask, an = anchored_key(e["c"], e["w"], norm_n(e.get("n", 0)))
+            n_ent = norm_n(e.get("n", 0))
+            if n_ent == 0 and (e["c"] + SEP + e["w"]) in split_sid:
+                hit = own_etymon_ids(e.get("t")) & split_sid[e["c"] + SEP + e["w"]]
+                if hit:
+                    n_ent = norm_n("sid:" + min(hit))
+            akey, ask, an = anchored_key(e["c"], e["w"], n_ent)
             note_node(akey, e["w"], True)
             ctx = tokens(glosses.get(ask + SEP + str(an), "")) | wtok(e["w"])
             have_primary = akey in primary_of
