@@ -97,6 +97,16 @@ node tools/qa.js web/graph-full.json
 A failed test is a blocked release. Found a wrong chain? Add it as a test
 first, then fix it.
 
+### How the site loads
+
+The deployed page is a small shell (`index.html`, built by
+`build/site.py`) that fetches one gzipped graph asset
+(`graph-web-<hash>.json.gz`, about a third of the raw JSON), shows a
+progress bar, and unpacks it in the browser with `DecompressionStream`.
+The hash changes only when the graph changes, so revisits hit the
+browser cache. The single-file builds from `build/bundle.py` remain for
+offline use (the full one lives on the GitHub release).
+
 ### Uncertain etymologies
 
 Wiktionary flags disputed derivations machine-readably, and the site keeps
