@@ -586,6 +586,12 @@ def main():
             note_node(akey, e["w"], True)
             ctx = tokens(glosses.get(ask + SEP + str(an), "")) | wtok(e["w"])
             have_primary = akey in primary_of
+            # "From Middle English concurrent, from Old French concurrent,
+            # from Latin concurrens": when a cited stage has no page of its
+            # own, the citing page's ladder is the only ancestry it has, so
+            # consecutive citations chain -- but only onto phantoms; a real
+            # entry defines its own ancestry.
+            prev_key, prev_entry = None, True
             for kind, lg, term, gh, ih, unc in parse_templates(
                     e.get("t") or [], e["c"], e["w"]):
                 pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx,
@@ -613,6 +619,15 @@ def main():
                 add_edge(pkey, akey, kind)
                 if unc and pkey != akey:
                     uncertain.add((pkey, akey))
+                if (prev_key is not None and not prev_entry and not entry
+                        and kind not in ("root", "form") and trusted
+                        and pkey != prev_key and not is_affix_term(term)):
+                    # both ends phantom: a real entry ends the "from X, from
+                    # Y" run -- pages also write "compare French ontologie"
+                    # after a coinage, and that is parallelism, not descent
+                    add_edge(pkey, prev_key, kind)
+                    stats["phantom ladder"] += 1
+                prev_key, prev_entry = (None, True) if kind in ("root", "form")                     else (pkey, entry)
                 if (not have_primary and kind != "root" and pkey != akey
                         and not is_affix_term(term)):
                     primary.add((pkey, akey))
@@ -637,6 +652,15 @@ def main():
     for key in node_entry:
         c = key.split(":", 1)[0]
         real.setdefault((c, fold(node_word[key])), key)
+    # A participle page with no templates and no descendants never reaches
+    # source2, yet concurrens is a real entry; registry spellings make
+    # legitimate redirect targets too (single-sense only -- a homograph
+    # would need sense evidence a phantom cannot offer).
+    for sk2, ns2 in sense_ns.items():
+        if len(ns2) != 1:
+            continue
+        c2, w2 = sk2.split(SEP, 1)
+        real.setdefault((c2, fold(w2)), intern(c2 + ":" + w2))
 
     def gloss_of_key(key):
         c, rest = key.split(":", 1)
@@ -653,12 +677,18 @@ def main():
                     return True
         return False
 
+    # Wiktionary files medieval and new Latin under plain Latin entries, so
+    # a la-med or la-new citation may fold onto the la page (influentia).
+    LANGVAR = {"la-med": "la", "la-new": "la", "la-vul": "la",
+               "la-ecc": "la", "la-lat": "la"}
     cand = {}
     for key in node_word:
         if key in node_entry:
             continue
         c = key.split(":", 1)[0]
         tgt = real.get((c, fold(node_word[key])))
+        if not tgt and c in LANGVAR:
+            tgt = real.get((LANGVAR[c], fold(node_word[key])))
         if tgt and tgt != key:
             cand[key] = tgt
 
@@ -674,14 +704,34 @@ def main():
             neigh[pp] |= wtok(node_word.get(cc, "")) | tokens(gloss_of_key(cc))
         if cc in cand:
             neigh[cc] |= wtok(node_word.get(pp, "")) | tokens(gloss_of_key(pp))
+    def word_prefix_ok(tgt, nb):
+        """Gloss evidence fails for participles: concurrēns must reach the
+        entry concurrens although "running with others" shares nothing with
+        "simultaneous". The words themselves are evidence -- a neighbour
+        sharing a 5-letter prefix with the target (concurrent/concurrens: 8)
+        vouches for the fold; dag/day share two and stay apart."""
+        w = fold(node_word.get(tgt, "")).lower()
+        for t in nb:
+            n2 = 0
+            m = min(len(w), len(t))
+            while n2 < m and w[n2] == t[n2]:
+                n2 += 1
+            if n2 >= 5:
+                return True
+        return False
+
     alias, skipped = {}, 0
     for key, tgt in cand.items():
         g = tokens(gloss_of_key(tgt))
         nb = neigh.get(key)
-        if g and nb and not soft_match(g, nb):
+        if g and nb and not soft_match(g, nb) and not word_prefix_ok(tgt, nb):
             skipped += 1
             continue
         alias[key] = tgt
+    for key, tgt in alias.items():
+        if tgt not in node_word:
+            node_word[tgt] = tgt.split(":", 1)[1]
+            node_entry.add(tgt)
     print("diacritic phantoms redirected: {:,}   kept as phantoms: {:,}".format(
         len(alias), skipped), flush=True)
     if alias:

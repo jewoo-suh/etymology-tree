@@ -321,6 +321,21 @@ def main():
                     grew += 1
         frontier = nxt
     print("primary-chain closure: +{:,}".format(grew))
+
+    # A phantom on a chain carries its citation ladder ("from Old French
+    # concurrent, from Latin concurrens"); a glossless node's few parents
+    # are that ladder, and the displayed chain dies without them.
+    grew2 = 0
+    for _ in range(6):
+        step = 0
+        for p, c, _k, _pr, _un in edges:
+            if c in keep and p not in keep and not nodes[c].get("gloss")                     and len(up.get(c) or ()) <= 3:
+                keep.add(p)
+                step += 1
+        grew2 += step
+        if not step:
+            break
+    print("phantom-ladder closure: +{:,}".format(grew2))
     print("nodes total: {:,}".format(len(keep)))
 
     # A slice must not present only the wrong homograph: if any sense of a

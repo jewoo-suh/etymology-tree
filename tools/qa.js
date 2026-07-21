@@ -57,6 +57,10 @@ const TESTS = [
   { w: 'en:robot', must: ['robota'], banL: [], banG: [] },
   { w: 'en:orange', must: ['نارنج'], banL: [], banG: [] },
   { w: 'en:ketchup', must: ['膎汁'], banL: [], banG: [] },
+  { w: 'en:culture', must: ['cultura', 'colo'], banL: [], banG: [] },
+  { w: 'en:create', must: ['creo'], banL: [], banG: [] },
+  { w: 'en:concurrent', must: ['concurrens|concurrēns'], banL: [], banG: [] },
+  { w: 'en:influence', must: ['influentia'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------
@@ -275,7 +279,7 @@ function primOK(par, child, k) {
   // a dead-end primary releases the other parents -- lineage ones only,
   // never formation parts (kind 3)
   if (pp.some(x => (UP[x] || []).length)) return false;
-  return k !== 3;
+  return k !== 3 || code(par) !== code(child);
 }
 function kindNum(p, c) {
   const a = DOWN[p] || [], k = DOWNK[p] || [];
