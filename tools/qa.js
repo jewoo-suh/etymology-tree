@@ -36,7 +36,7 @@ const TESTS = [
   { w: 'en:bread', must: [], banL: ['braidaz', 'brad'], banG: ['broad', 'roasted'] },
   { w: 'en:book', must: ['bōk|boc'], banL: [], banG: [] },
   { w: 'en:heart', must: ['hert|heort'], banL: ['heorot', 'herutaz'], banG: ['deer', 'stag'] },
-  { w: 'en:wheel', must: ['kʷékʷlos|hwēol|hweol'], banL: [], banG: [] },
+  { w: 'en:wheel', must: ['kʷékʷlos|hwēol|hweol'], banL: ['whelen'], banG: [] },
   { w: 'en:carve', must: ['kerbaną'], banL: [], banG: [] },
   { w: 'en:teacher', must: ['teach'], banL: [], banG: [] },
   { w: 'en:ontology', must: ['ontologia'], banL: [], banG: [] },
@@ -265,6 +265,100 @@ function pageChain(id) {
   }
   return route;
 }
+// ---- the page's tree build + path overwrite --------------------------------
+// The chain a user actually reads is the drawn tree's lit path, which can
+// differ from climb(): transitive reduction shapes the tree, and the chain bar
+// is rewritten to match the drawing. QA must judge the displayed route --
+// testing climb() alone is how *whelen slipped through while the logic looked
+// clean.
+const caches = [{}, {}];
+function reachSet(id, limit, wr) {
+  const c = caches[wr ? 1 : 0];
+  if (c[id]) return c[id];
+  const seen = { [id]: 1 }, q = [id];
+  let i = 0;
+  while (i < q.length && q.length < limit) {
+    const ks = DOWN[q[i]] || [], kk = DOWNK[q[i]] || [];
+    i++;
+    for (let j = 0; j < ks.length; j++) {
+      if (kk[j] === 2 && !wr) continue;
+      const x = ks[j];
+      if (!seen[x]) { seen[x] = 1; q.push(x); }
+    }
+  }
+  c[id] = seen;
+  return seen;
+}
+function directChildren(id, chainSet) {
+  const ks = DOWN[id] || [], kk = DOWNK[id] || [], out = [];
+  for (let i = 0; i < ks.length; i++) {
+    if (isAffix(ks[i])) continue;
+    out.push([ks[i], kk[i]]);
+  }
+  if (out.length < 3) return out;
+  const sets = out.map(e => reachSet(e[0], 2500, true));
+  const keep = [];
+  for (let a = 0; a < out.length; a++) {
+    if (chainSet.has(id * N + out[a][0])) { keep.push(out[a]); continue; }
+    let sh = false;
+    for (let b = 0; b < out.length && !sh; b++)
+      if (a !== b && sets[b][out[a][0]]) sh = true;
+    if (!sh) keep.push(out[a]);
+  }
+  return keep.length ? keep : out;
+}
+function buildTree(rootId, route) {
+  let budget = 5000;
+  const onStack = {};
+  const chainSet = new Set();
+  for (let ci = 0; ci + 1 < route.length; ci++)
+    chainSet.add(route[ci] * N + route[ci + 1]);
+  function rec(id, depth, parentOn) {
+    budget--;
+    const on = parentOn && depth < route.length && route[depth] === id;
+    const out = { id, path: on, children: [] };
+    if (depth >= 12) return out;
+    onStack[id] = 1;
+    for (const [c] of directChildren(id, chainSet)) {
+      if (onStack[c]) continue;
+      const cOn = on && depth + 1 < route.length && route[depth + 1] === c;
+      if (budget <= 0 && !cOn) continue;
+      out.children.push(rec(c, depth + 1, on));
+    }
+    delete onStack[id];
+    return out;
+  }
+  return rec(rootId, 0, true);
+}
+function pathInTree(tree, id, want) {
+  let best = null, bestScore = -1;
+  (function walk(n, trail) {
+    const t = trail.concat([n]);
+    if (n.id === id) {
+      let score = 0;
+      for (const x of t) if (want[x.id]) score++;
+      if (score > bestScore || (score === bestScore && best && t.length < best.length)) {
+        bestScore = score;
+        best = t;
+      }
+      return;
+    }
+    for (const ch of n.children) walk(ch, t);
+  })(tree, []);
+  return best;
+}
+function displayedRoute(id) {
+  const c = climb(id);
+  if (!c) return [id];
+  let route = c.route;
+  const tree = buildTree(route[0], route);
+  const want = {};
+  route.forEach(x => want[x] = 1);
+  const drawn = pathInTree(tree, id, want);
+  if (drawn) route = drawn.map(nd => nd.id);
+  return route;
+}
+
 function climb(id) {
   let walk = pageChain(id);
   if (walk.length > 1) {
@@ -303,8 +397,7 @@ for (const t of TESTS) {
     }
     continue;
   }
-  const c = climb(id);
-  const route = c ? c.route : [id];
+  const route = displayedRoute(id);
   // must-matching strips the asterisk (a required 'dagaz' may arrive as
   // *dagaz); exact bans keep it, so banning attested "dag" (the dough entry)
   // does not also ban the legitimate proto *dag

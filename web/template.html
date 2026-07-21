@@ -340,6 +340,7 @@
         <div class="route" id="route"></div>
         <div class="spacer"></div>
         <div class="controls">
+          <button class="btn" type="button" id="copychain" title="Copy the chain as text">Copy chain</button>
           <button class="btn" type="button" id="zoomout" title="Zoom out">&minus;</button>
           <button class="btn" type="button" id="zoomin" title="Zoom in">+</button>
           <button class="btn" type="button" id="zoomfit" title="Reset zoom">Fit</button>
@@ -839,7 +840,7 @@
      real chain through Proto-Germanic and Proto-Italic. Drawing both turns a
      deep tree into a starburst. If a child is reachable from one of its own
      siblings, the edge to it is a shortcut and the longer road already shows it. */
-  function directChildren(id, withRoot) {
+  function directChildren(id, withRoot, chainSet) {
     var ks = kids(id), kk = DOWNK[id] || [];
     var out = [];
     for (var i = 0; i < ks.length; i++) {
@@ -850,6 +851,16 @@
     var sets = out.map(function (e) { return reachSet(e[0], 2500, withRoot); });
     var keep = [];
     for (var a = 0; a < out.length; a++) {
+      /* Transitive reduction must never drop a step of the query's own chain.
+         wheel is reachable from its sibling whelen, so the direct whel-to-
+         wheel edge looked redundant and was cut -- and the lit path then had
+         no choice but to route through the verb, rewriting the chain bar to
+         *whelen + -en on the way. The page said whel to wheel; the drawing
+         has to be able to say the same. */
+      if (chainSet && chainSet.has(id * N + out[a][0])) {
+        keep.push(out[a]);
+        continue;
+      }
       var shadowed = false;
       for (var b = 0; b < out.length && !shadowed; b++) {
         if (a !== b && sets[b][out[a][0]]) shadowed = true;
@@ -861,6 +872,10 @@
 
   function buildTree(rootId, route, withRoot, qid) {
     var budget = NODE_BUDGET, onStack = {};
+    var chainSet = new Set();
+    for (var ci = 0; ci + 1 < route.length; ci++) {
+      chainSet.add(route[ci] * N + route[ci + 1]);
+    }
     function rec(id, depth, kind, parentOn, from) {
       budget--;
       var on = parentOn && depth < route.length && route[depth] === id;
@@ -895,7 +910,7 @@
       };
       if (depth >= DEPTH_CAP) return out;
       onStack[id] = 1;
-      var ch = directChildren(id, withRoot);
+      var ch = directChildren(id, withRoot, chainSet);
       for (var i = 0; i < ch.length; i++) {
         var c = ch[i][0];
         if (onStack[c]) continue;
@@ -1983,6 +1998,33 @@
     canvas.scrollLeft = fx * state.zoom - ax;
     canvas.scrollTop = fy * state.zoom - ay;
   }
+  document.getElementById("copychain").addEventListener("click", function () {
+    var T = state.tree;
+    if (!T) return;
+    var text;
+    if (state.mode === "form" && T.formation) {
+      text = T.formation.map(function (c) { return labelOf(c[c.length - 1]); })
+        .join(" + ") + " → " + labelOf(T.q);
+    } else {
+      text = (T.chain || [T.q]).map(labelOf).join(" → ");
+    }
+    var btn = this;
+    function done(ok) {
+      btn.textContent = ok ? "Copied ✓" : "Copy failed";
+      setTimeout(function () { btn.textContent = "Copy chain"; }, 1300);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () { done(true); }, function () { done(false); });
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { done(document.execCommand("copy")); } catch (e) { done(false); }
+      document.body.removeChild(ta);
+    }
+  });
   document.getElementById("zoomin").addEventListener("click", function () { setZoom(state.zoom * 1.25); });
   document.getElementById("zoomout").addEventListener("click", function () { setZoom(state.zoom / 1.25); });
   document.getElementById("zoomfit").addEventListener("click", function () {
