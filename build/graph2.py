@@ -1196,6 +1196,42 @@ def main():
         for k in alias:
             node_word.pop(k, None)
 
+    # ---- homograph-sense primary --------------------------------------------
+    # A borrowed word with no page of its own is often listed in the
+    # Descendants of several senses of its source: Japanese パンチ "a hit"
+    # sits under both English punch "a hit or strike with one's fist" and
+    # punch "a beverage" (from Hindi "five"). With no primary of its own the
+    # climb takes the cheapest onward chain, which ran the hit-word back to
+    # "five". When a primary-less child has parents that are different senses
+    # of ONE word, the sense whose gloss matches the child's becomes primary.
+    up_par = collections.defaultdict(list)
+    for (p, c) in edges:
+        up_par[c].append(p)
+    n_hsp = 0
+    for c, ps in up_par.items():
+        if c in primary_of:
+            continue
+        cg = tokens(gloss_of_key(c))
+        if not cg:
+            continue
+        by_word = collections.defaultdict(list)
+        for p in ps:
+            if p in node_entry and "#" in p:
+                by_word[p.split("#")[0]].append(p)
+        best_p, best_sc = None, 0
+        for base, cands in by_word.items():
+            if len(cands) < 2:
+                continue
+            for p in cands:
+                sc = len(tokens(gloss_of_key(p)) & cg)
+                if sc > best_sc:
+                    best_sc, best_p = sc, p
+        if best_p is not None and best_sc >= 1:
+            primary.add((best_p, c))
+            primary_of.add(c)
+            n_hsp += 1
+    print("homograph-sense primaries: {:,}".format(n_hsp), flush=True)
+
     # ---- write --------------------------------------------------------------
     nodes_out = {}
     for key, word in node_word.items():
