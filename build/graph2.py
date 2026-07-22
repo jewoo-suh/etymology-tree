@@ -192,6 +192,10 @@ def clean_term(t):
     if not t:
         return ""
     t = t.split("<")[0].strip()
+    if "," in t:
+        # an enumerated citation (strǣt, strēt) is spelling variants of one
+        # stage; the first is the citation
+        t = t.split(",")[0].strip()
     if "(" in t or ")" in t:
         # "(persica) praecocia" keeps its word; "(cut off)" has nothing left
         t = PARENNOTE.sub("", t).strip()
