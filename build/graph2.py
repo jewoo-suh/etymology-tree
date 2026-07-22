@@ -540,6 +540,17 @@ def main():
                 if sk2 in sense_ns:
                     sk, term, ns = sk2, t2, sense_ns[sk2]
         if not ns:
+            # Arabic and Hebrew citations arrive pointed, registries are
+            # unpointed; classes 10-35 are vocalisation, class 7-9 (nukta,
+            # virama) are structure and stay
+            t3 = "".join(ch for ch in unicodedata.normalize("NFD", term)
+                         if not (10 <= unicodedata.combining(ch) <= 35
+                                 or unicodedata.combining(ch) >= 220))
+            if t3 != term:
+                sk3 = lg + SEP + t3
+                if sk3 in sense_ns:
+                    sk, term, ns = sk3, t3, sense_ns[sk3]
+        if not ns:
             stats["phantom"] += 1
             return intern(lg + ":" + term), False, "phantom", True
         ns_all = ns
@@ -907,6 +918,35 @@ def main():
     # after the entry names one of the entry's own recorded parents: the
     # salary page's next stop (salarium) is exactly what salaire's page
     # cites, while nothing after ontologie matches its parents.
+    def bridge_ok(entry_key, ph_key):
+        """A bridge through an entry needs more evidence than a plain
+        ladder: every genuine one (salaire/salarie, gingifer/gingiber,
+        quarantina/quarenteine, concurrens/concurrent) shares five or
+        more letters; cocco/coche share three, and that was a coconut
+        grafted onto a coach."""
+        a = defold(node_word.get(entry_key, "")).lstrip("*")
+        b = defold(node_word.get(ph_key) or ph_key.split(":", 1)[1]).lstrip("*")
+        if not a or not b:
+            return False
+        if scriptclass(a) != scriptclass(b):
+            return True
+        n = 0
+        m = min(len(a), len(b))
+        while n < m and a[n] == b[n]:
+            n += 1
+        if n >= 5:
+            return True
+        best = 0
+        for i2 in range(len(a)):
+            for j2 in range(len(b)):
+                k2 = 0
+                while (i2 + k2 < len(a) and j2 + k2 < len(b)
+                       and a[i2 + k2] == b[j2 + k2]):
+                    k2 += 1
+                if k2 > best:
+                    best = k2
+        return best >= 5
+
     if pending_ladder:
         childmap = collections.defaultdict(set)
         for (pp, cc) in edges:
@@ -921,20 +961,38 @@ def main():
                 # among them the very phantom) stays a parallel
                 if childmap.get(entry_key):
                     continue
-                if not ladder_ok(node_word.get(entry_key, ""), ph_key):
+                if not bridge_ok(entry_key, ph_key):
                     continue
                 if (entry_key, ph_key) not in edges:
                     add_edge(entry_key, ph_key, "der")
                     n_bridge += 1
+                if ph_key not in primary_of:
+                    primary.add((entry_key, ph_key))
+                    primary_of.add(ph_key)
                 continue
             nf = defold(node_word.get(nxt) or nxt.split(":", 1)[1])
+            nl = nxt.split(":", 1)[0]
             for par in childmap.get(entry_key, ()):
+                # the vouching match must be the same word in the same
+                # language: es:coco naming pt:coco vouched the coconut as
+                # a parent of Middle French coche, and coach grew a palm
+                pl2 = par.split(":", 1)[0]
+                if pl2 != nl:
+                    continue
                 pw = defold(node_word.get(par) or par.split(":", 1)[1])
                 if pw == nf or (len(pw) >= 5 and len(nf) >= 5
                                 and pw[:5] == nf[:5]):
                     if (entry_key, ph_key) not in edges:
                         add_edge(entry_key, ph_key, "der")
                         n_bridge += 1
+                    # a vouched bridge is corroborated by the citing page
+                    # naming the entry's own parent next; that makes it the
+                    # phantom's primary, and the monopoly bars colliding
+                    # spellings (the coconut tree's coche stays out of the
+                    # coach's lineage)
+                    if ph_key not in primary_of:
+                        primary.add((entry_key, ph_key))
+                        primary_of.add(ph_key)
                     break
         print("ladder bridges through entries: {:,}".format(n_bridge),
               flush=True)

@@ -975,10 +975,16 @@
     if (bare) return bare;
     // nothing reconstructed anywhere: fall back to the oldest attested form
     var r = ancestorsVia(id, [1, 1, 1, 1]);
-    var best = -1, bd = -1;
+    var best = -1, bs = -1;
     for (var k in r.depth) {
       k = +k;
-      if (k !== id && r.depth[k] > bd) { bd = r.depth[k]; best = k; }
+      if (k === id) continue;
+      /* prefer the deeper line; at equal depth a word beats a bare root
+         citation (kitabu should climb to kitab, not stop at k-t-b) */
+      var p1 = k, nxt2 = r.parentOf[k];
+      while (nxt2 !== undefined && nxt2 !== id) { p1 = nxt2; nxt2 = r.parentOf[p1]; }
+      var sc = r.depth[k] * 4 + (kindOf(p1, id) !== K_ROOT ? 2 : 0);
+      if (sc > bs) { bs = sc; best = k; }
     }
     if (best < 0) return null;
     var route = [], cur = best;

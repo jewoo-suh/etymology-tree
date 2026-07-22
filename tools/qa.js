@@ -90,6 +90,9 @@ const TESTS = [
   { w: 'en:bishop', must: ['ἐπίσκοπος|episcopus'], banL: [], banG: [] },
   { w: 'en:bride', must: ['brūdiz|bryd'], banL: [], banG: [] },
   { w: 'en:pepper', must: ['πέπερι|piper'], banL: [], banG: [] },
+  { w: 'en:coach', must: [], banL: ['cocco', 'coccum'], banG: ['coconut'] },
+  { w: 'en:dachshund', must: ['þahsuz|Dachs'], banL: [], banG: [] },
+  { w: 'en:banshee', must: ['ben síde|benā'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------
@@ -287,10 +290,14 @@ function climbWaves(id) {
   const b = passWith(id, [1, 1, 1, 1], true);
   if (b) { b.route = extendUp(b.route); return b; }
   const r = ancestorsVia(id, [1, 1, 1, 1]);
-  let best = -1, bd = -1;
+  let best = -1, bs = -1;
   for (let k in r.depth) {
     k = +k;
-    if (k !== id && r.depth[k] > bd) { bd = r.depth[k]; best = k; }
+    if (k === id) continue;
+    let p1 = k, nxt2 = r.parentOf[k];
+    while (nxt2 !== undefined && nxt2 !== id) { p1 = nxt2; nxt2 = r.parentOf[p1]; }
+    const sc = r.depth[k] * 4 + (kindNum(p1, id) !== 2 ? 2 : 0);
+    if (sc > bs) { bs = sc; best = k; }
   }
   if (best < 0) return null;
   const route = [];
