@@ -587,7 +587,11 @@ def main():
         # itself, and that is how the egg tree kept hold of the organ.
         own = wtok(term)
         want_trust = gloss_hints | ctx
-        want_sel = want_trust | own
+        # id hints are usually senseid tags but are often plain words
+        # ({{compound|fi|kanto|id1=carrying|juhta}} means the "carrying"
+        # sense of kanto, not the "stump" one); when they match no senseid
+        # they still steer the gloss-overlap sense selection
+        want_sel = want_trust | own | {t for h in id_hints for t in tokens(h)}
 
         def prefix5(a):
             """A long shared prefix between the target's own spelling and any
@@ -1162,6 +1166,7 @@ def main():
                 alias[key] = tgt2
                 n_lvar += 1
     print("latin-variant phantoms folded: {:,}".format(n_lvar), flush=True)
+    pre_entry = frozenset(node_entry)
     for key, tgt in alias.items():
         if tgt not in node_word:
             node_word[tgt] = tgt.split(":", 1)[1]
@@ -1176,12 +1181,28 @@ def main():
                 k = alias[k]
                 hops += 1
             return k
+
+        def is_recon(lg):
+            return lg.endswith("-pro")
+
+        n_compdrop = 0
         remapped = {}
         reprim = set()
         reunc = set()
         for (p, c), kind in edges.items():
             p2, c2 = unalias(p), unalias(c)
             if p2 == c2:
+                continue
+            # A reconstructed root's ancestry belongs to its own page. When a
+            # folded child-reference would hand an ESTABLISHED proto root a
+            # new proto parent, drop it: *ud, the "out" prefix listed among
+            # *tenh₂-'s compound derivatives (*ud-tenh₂- "outstretched"),
+            # folded onto the standalone adverb *úd "out", making the whole
+            # out family (out, aus, utter) inherit "to stretch".
+            if (c != c2 and c2 in pre_entry
+                    and is_recon(c2.split(":", 1)[0])
+                    and is_recon(p2.split(":", 1)[0])):
+                n_compdrop += 1
                 continue
             if (p, c) in primary:
                 reprim.add((p2, c2))
@@ -1193,6 +1214,8 @@ def main():
         edges = remapped
         primary = reprim
         uncertain = reunc
+        print("compound-component roots dropped: {:,}".format(n_compdrop),
+              flush=True)
         for k in alias:
             node_word.pop(k, None)
 
