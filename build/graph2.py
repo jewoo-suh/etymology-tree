@@ -792,6 +792,7 @@ def main():
                     e.get("t") or [], e["c"], e["w"]):
                 pkey, entry, how, trusted = resolve(lg, term, gh, ih, ctx,
                                                     e["w"])
+                orig_kind = kind
                 if not trusted and kind in ("inh", "bor", "der", "cal"):
                     stats["demoted"] += 1
                     kind = "root"
@@ -858,7 +859,20 @@ def main():
                     if skey != pkey:
                         add_edge(skey, pkey, k2)
                         stats["ety tree"] += 1
-                if (not have_primary and kind != "root" and pkey != akey
+                # A page's own first lineage citation is its page-walk parent
+                # even when the gloss-trust check demotes the edge -- but only
+                # when the citation is UNAMBIGUOUS (a unique entry, no sense
+                # guessing). Middle English laste inherits from Old English
+                # latost (superlative of læt, "late"), whose gloss says
+                # "latest" not "last", so it was demoted and lost its primary;
+                # the climb then followed the homograph læste "shoemaker's
+                # tool" and made lastness descend from "to trace". Only the
+                # unique case is rescued, so redirect and altform collisions
+                # (dag=dough, resolved by guessing) stay demoted.
+                prim_ok = (kind != "root"
+                           or (orig_kind in ("inh", "bor", "der", "cal")
+                               and how == "unique"))
+                if (not have_primary and prim_ok and pkey != akey
                         and (not is_affix_term(term)
                              or is_affix_term(e["w"]))):
                     # an affix never anchors a word's lineage, but an affix
