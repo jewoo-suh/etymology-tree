@@ -780,6 +780,8 @@ def main():
             note_node(akey, e["w"], True, force=True)
             ctx = tokens(glosses.get(ask + SEP + str(an), "")) | wtok(e["w"])
             have_primary = akey in primary_of
+            prim_pkey = None
+            prim_is_form = False
             # "From Middle English concurrent, from Old French concurrent,
             # from Latin concurrens": when a cited stage has no page of its
             # own, the citing page's ladder is the only ancestry it has, so
@@ -872,15 +874,44 @@ def main():
                 prim_ok = (kind != "root"
                            or (orig_kind in ("inh", "bor", "der", "cal")
                                and how == "unique"))
-                if (not have_primary and prim_ok and pkey != akey
+                if (prim_ok and pkey != akey
                         and (not is_affix_term(term)
                              or is_affix_term(e["w"]))):
                     # an affix never anchors a word's lineage, but an affix
                     # PAGE has an affix lineage of its own: -er descends from
                     # Old English -ere and Proto-Germanic *-ārijaz
-                    primary.add((pkey, akey))
-                    primary_of.add(akey)
-                    have_primary = True
+                    is_form = (kind == "form")
+                    if not have_primary:
+                        primary.add((pkey, akey))
+                        primary_of.add(akey)
+                        have_primary = True
+                        prim_pkey = pkey
+                        prim_is_form = is_form
+                    elif prim_is_form and not is_form and prim_pkey != pkey:
+                        # A page-walk parent means "where the word came from".
+                        # When a word is prefix+stem (behoof = *bi- + *hōf)
+                        # AND inherits from that stem's proper form (*hōfą
+                        # "necessity"), the inheritance is the lineage and the
+                        # bare formation base can collide with a homograph
+                        # (*hōf "hoof"); the lineage supersedes it. But a
+                        # compound's formation IS its etymology, and an
+                        # unrelated alternative theory must not displace it:
+                        # penguin (pen + gwyn "white head") also cites Latin
+                        # pinguis "fat", which shares no stem with the parts.
+                        # Supersede only when the lineage names the same
+                        # morpheme as the base -- a shared 3-letter prefix.
+                        aw = defold(node_word.get(prim_pkey)
+                                    or prim_pkey.split(":", 1)[1]).lstrip("*")
+                        bw = defold(term).lstrip("*")
+                        shp = 0
+                        while (shp < min(len(aw), len(bw))
+                               and aw[shp] == bw[shp]):
+                            shp += 1
+                        if shp >= 3:
+                            primary.discard((prim_pkey, akey))
+                            primary.add((pkey, akey))
+                            prim_pkey = pkey
+                            prim_is_form = False
             if e.get("d"):
                 walk_desc(e["d"], akey, ctx)
             done += 1
