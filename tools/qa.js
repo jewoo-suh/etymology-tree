@@ -55,7 +55,7 @@ const TESTS = [
   { w: 'en:avocado', must: ['ahuacatl'], banL: ['ahuat', 'ahuacat'], banG: ['oak', 'acorn'] },
   { w: 'en:penguin', must: ['kʷennom'], banL: [], banG: [] },
   { w: 'en:robot', must: ['robota'], banL: [], banG: [] },
-  { w: 'en:orange', must: ['نارنج'], banL: [], banG: [] },
+  { w: 'en:orange', must: ['نارنج|नारङ्ग|نارنگ'], banL: [], banG: ['apple'] },
   { w: 'en:ketchup', must: ['膎汁'], banL: [], banG: [] },
   { w: 'en:culture', must: ['cultura', 'colo'], banL: [], banG: [] },
   { w: 'en:create', must: ['creo'], banL: [], banG: [] },
@@ -93,6 +93,8 @@ const TESTS = [
   { w: 'en:coach', must: [], banL: ['cocco', 'coccum'], banG: ['coconut'] },
   { w: 'en:dachshund', must: ['þahsuz|Dachs'], banL: [], banG: [] },
   { w: 'en:banshee', must: ['ben síde|benā'], banL: [], banG: [] },
+  { w: 'en:galaxy', must: ['γάλα|γαλαξίας'], banL: [], banG: [] },
+  { w: 'en:volcano', must: ['Vulcanus|vulcano'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

@@ -79,7 +79,7 @@ def own_etymon_ids(tmpls):
     Two distinct ids on one page = two homographs sharing a key."""
     ids = set()
     for t in tmpls or []:
-        if t.get("n") != "etymon":
+        if t.get("n") not in ("etymon", "ety"):
             continue
         a = t.get("a") or {}
         if a.get("id"):
@@ -423,6 +423,7 @@ def main():
     print("pass 1: collecting referenced spellings", flush=True)
     cand = set()
     page_ids = collections.defaultdict(set)
+    sid2n = {}
 
     def note_ref(lg, term):
         cand.add(intern(lg + SEP + term.lstrip("*").strip()))
@@ -444,8 +445,14 @@ def main():
             e = json.loads(line)
             n_src += 1
             note_ref(e["c"], e["w"])
+            nn_e = norm_n(e.get("n", 0))
             for _id in own_etymon_ids(e.get("t")):
                 page_ids[e["c"] + SEP + e["w"]].add(_id)
+                if nn_e:
+                    # a numbered section's etymon id names that number:
+                    # atlas cites Arabic atlas <id:rag>, whose page holds
+                    # the satin under etymology 3
+                    sid2n.setdefault(e["c"] + SEP + e["w"] + SEP + _id, nn_e)
             for kind, lg, term, _g, _i, _u, _subs in parse_templates(
                     e.get("t") or [], e["c"], e["w"]):
                 note_ref(lg, term)
@@ -491,6 +498,8 @@ def main():
             for sid in set(r.get("s") or []) | bare:
                 sidmap.setdefault(sk + SEP + sid, n)
 
+    for k2, nn in sid2n.items():
+        sidmap.setdefault(k2, nn)
     multi = 0
     for sk, ns in raw_ns.items():
         ns = sorted(ns)
@@ -522,9 +531,11 @@ def main():
     def strip_marks(s3):
         """Accent-like marks only (combining class 220+): the Old English
         dot and the Vedic anudatta go, but a Devanagari virama (class 9)
-        is structure, and stripping it corrupts every conjunct."""
-        return "".join(ch for ch in unicodedata.normalize("NFD", s3)
-                       if unicodedata.combining(ch) < 220)
+        is structure, and stripping it corrupts every conjunct. Recompose
+        so the leftovers match composed registry spellings."""
+        return unicodedata.normalize(
+            "NFC", "".join(ch for ch in unicodedata.normalize("NFD", s3)
+                           if unicodedata.combining(ch) < 220))
 
     def resolve(lg, term, gloss_hints, id_hints, ctx, cword=""):
         term = term.lstrip("*").strip()
@@ -543,9 +554,12 @@ def main():
             # Arabic and Hebrew citations arrive pointed, registries are
             # unpointed; classes 10-35 are vocalisation, class 7-9 (nukta,
             # virama) are structure and stay
-            t3 = "".join(ch for ch in unicodedata.normalize("NFD", term)
-                         if not (10 <= unicodedata.combining(ch) <= 35
-                                 or unicodedata.combining(ch) >= 220))
+            # vocalisation only (fatha 30, sukun 34, Hebrew points):
+            # class-230 marks stay because the hamza in أ is one of them,
+            # and NFC reattaches it to its alif
+            t3 = unicodedata.normalize(
+                "NFC", "".join(ch for ch in unicodedata.normalize("NFD", term)
+                               if not 10 <= unicodedata.combining(ch) <= 35))
             if t3 != term:
                 sk3 = lg + SEP + t3
                 if sk3 in sense_ns:
