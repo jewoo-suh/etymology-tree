@@ -908,8 +908,16 @@ def main():
                         # unrelated alternative theory must not displace it:
                         # penguin (pen + gwyn "white head") also cites Latin
                         # pinguis "fat", which shares no stem with the parts.
-                        # Supersede only when the lineage names the same
-                        # morpheme as the base -- a shared 3-letter prefix.
+                        # For a mere ALTERNATIVE theory (a der/bor citation)
+                        # supersede only when it names the same morpheme as the
+                        # base -- a shared 3-letter prefix -- so pinguis (der)
+                        # cannot displace pen. But a true inheritance (inh) IS
+                        # the recorded line of descent by Wiktionary's own
+                        # assertion, so it always outranks a formation base even
+                        # when folk-respelling has broken the prefix match:
+                        # hangnail is inh from Old English angnæġl (ang
+                        # "painful" + nægl) and only LATER reanalysed as
+                        # hang + nail, where "hang" collides with the Hang drum.
                         aw = defold(node_word.get(prim_pkey)
                                     or prim_pkey.split(":", 1)[1]).lstrip("*")
                         bw = defold(term).lstrip("*")
@@ -917,7 +925,7 @@ def main():
                         while (shp < min(len(aw), len(bw))
                                and aw[shp] == bw[shp]):
                             shp += 1
-                        if shp >= 3:
+                        if kind == "inh" or shp >= 3:
                             primary.discard((prim_pkey, akey))
                             primary.add((pkey, akey))
                             prim_pkey = pkey

@@ -375,7 +375,7 @@
     "gap:14px;background:var(--canvas,#101014);color:var(--ink,#ddd);" +
     "font:15px/1.4 system-ui,sans-serif;z-index:99;text-align:center;" +
     "padding:0 16px;");
-  wrap.innerHTML = '<div>Loading the etymology graph (about 17 MB, once)' +
+  wrap.innerHTML = '<div>Loading the etymology graph (about 16 MB, once)' +
     '\u2026</div>' +
     '<div style="width:min(420px,70vw);height:6px;border-radius:3px;' +
     'background:rgba(128,128,128,.25);overflow:hidden">' +
@@ -412,8 +412,8 @@
       }).then(function (t) { return JSON.parse(t); });
     });
   }
-  var glossReady = pull("gloss-caa6a89108.json.gz", 16340537, null);  // rides behind
-  pull("graph-core-c361de78cd.json.gz", 17607820, function (got, total) {
+  var glossReady = pull("gloss-4f909e6abe.json.gz", 15262923, null);  // rides behind
+  pull("graph-core-97ea8ca9a8.json.gz", 16555390, function (got, total) {
     var pc = total ? Math.min(99, Math.round(got * 100 / total)) : 50;
     document.getElementById("bootbar").style.width = pc + "%";
     document.getElementById("boottxt").textContent =
