@@ -99,17 +99,19 @@ first, then fix it.
 
 ### How the site loads
 
-The deployed page is a ~210 KB shell that opens instantly. The graph is
-cut into 512 range shards plus 699 search buckets (build/shards.py);
-typing fetches ~20 KB buckets, and opening a word fetches only the
-shards its chain needs (father: 8 files, under 1 MB), draws at once,
-then streams the sibling fan in behind, rebuilding in place. Two
-proofs gate every deploy: tools/shardcheck.js rebuilds the monolith
-from the shards byte-for-byte, and tools/lazycheck.js runs the shipped
-page script headless in both data modes and requires identical chains
-on all QA golds plus a random sweep. Single-file builds from
-build/bundle.py remain for offline use (the full one lives on the
-GitHub release).
+A static site (GitHub Pages) has no backend to compute one word's subtree
+per request, so it uses the standard client-side data-app pattern: the
+shell downloads the structural core once (`graph-core-<hash>.json.gz`,
+~17 MB: words, adjacency, kinds) with a progress bar via
+`DecompressionStream`, then holds it in memory -- after which drawing any
+word's tree touches only memory, never the network. Definitions
+(`gloss-<hash>.json.gz`, ~16 MB) stream in behind and pop into the panel
+when ready. `build/site.py` produces the shell and both hashed assets;
+`tools/sitecheck.js` verifies the boot path (core decompresses, every
+word draws with no fetch, glosses attach). An earlier range-shard scheme
+made first paint instant but re-downloaded scattered data on every word
+(tens of MB each), so it was dropped. The single-file builds from
+`build/bundle.py` inline everything for offline use.
 
 ### Uncertain etymologies
 

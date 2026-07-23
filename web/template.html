@@ -366,15 +366,19 @@
 <script>/*__D3__*/</script>
 <script id="data" type="application/json">/*__GRAPH__*/</script>
 <script>
-(function () {
+window.__runapp = function () {
   "use strict";
-  /* Two data modes share this file. The single-file builds inline the whole
-     graph as G. The deployed site inlines only META (codes, names, counts,
-     search-bucket bounds) and pulls range shards on demand: opening a word
-     costs a few hundred kilobytes, not the whole graph. */
+  /* Two boot paths share this file. Single-file builds inline the whole graph
+     into #data and self-boot at the end. The deployed site downloads one
+     gzipped core (words + edges, ~17 MB) with a progress bar, sets
+     window.__GRAPH__, and calls __runapp -- after which every word is instant
+     because the whole structure is in memory. Definitions stream in behind.
+     (The old META/shard path is left dormant; opening a word never fetches.) */
   var META = window.__SHARDMETA__ || null;
   var SHARDED = !!META;
-  var G = SHARDED ? null : JSON.parse(document.getElementById("data").textContent);
+  var dataEl = document.getElementById("data");
+  var G = window.__GRAPH__ ||
+    (SHARDED ? null : (dataEl ? JSON.parse(dataEl.textContent) : null));
   var SVGNS = "http://www.w3.org/2000/svg";
 
   /* The payload ships as newline-joined blobs and base36 id lists rather than
@@ -2546,5 +2550,13 @@
     } };
 
   open(KEYIDX["en:father"] !== undefined ? KEYIDX["en:father"] : 0);
+};
+(function () {
+  /* Single-file builds inline the graph into #data and boot now; the deployed
+     shell leaves this dormant and its loader calls __runapp once the core
+     download finishes. */
+  var d = document.getElementById("data");
+  var inlined = d && d.textContent.charAt(0) === "{";   // JSON, not the raw placeholder
+  if (window.__SHARDMETA__ || inlined) window.__runapp();
 })();
 </script>
