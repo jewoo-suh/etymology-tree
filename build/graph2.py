@@ -1261,6 +1261,52 @@ def main():
             n_hsp += 1
     print("homograph-sense primaries: {:,}".format(n_hsp), flush=True)
 
+    # ---- break primary cycles ----------------------------------------------
+    # The page-walk is meant to be a DAG, but borrowing citations can point
+    # both ways between related words (pt:banana -> wo:banaana -> ar -> fr ->
+    # pt:banana; af:rekenaar <-> nl:rekenaar), closing a loop so the chain has
+    # no root. Walk each node up its primary parents; the edge that first
+    # revisits a node on the current path is the back-edge -- drop its primary
+    # status (the plain edge stays, so the node falls back to the wave climb).
+    # enforce one primary parent per child (later passes can add a second);
+    # keep the lowest-id parent deterministically and drop the rest
+    prim_parent = {}
+    for (p, c) in sorted(primary):
+        if c not in prim_parent:
+            prim_parent[c] = p
+    n_multi = 0
+    for (p, c) in list(primary):
+        if prim_parent.get(c) != p:
+            primary.discard((p, c))
+            n_multi += 1
+    print("extra primaries dropped (one per child): {:,}".format(n_multi),
+          flush=True)
+    n_cyc = 0
+    for _ in range(8):                # iterate until the DAG is clean
+        state = {}                    # 1 = proven acyclic this pass
+        broke = 0
+        for start in list(prim_parent):
+            if state.get(start):
+                continue
+            path, seen = [], set()
+            node = start
+            while node in prim_parent and not state.get(node):
+                if node in seen:      # cut the edge that re-enters the path
+                    primary.discard((prim_parent[node], node))
+                    primary_of.discard(node)
+                    prim_parent.pop(node, None)
+                    broke += 1
+                    break
+                seen.add(node)
+                path.append(node)
+                node = prim_parent.get(node)
+            for x in path:
+                state[x] = 1
+        n_cyc += broke
+        if not broke:
+            break
+    print("primary cycles broken: {:,}".format(n_cyc), flush=True)
+
     # ---- write --------------------------------------------------------------
     nodes_out = {}
     for key, word in node_word.items():
