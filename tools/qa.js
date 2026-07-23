@@ -100,6 +100,10 @@ const TESTS = [
   { w: 'en:crayfish', must: ['krabitaz'], banL: [], banG: ['fissure', 'to burst'] },
   { w: 'en:female', must: ['femella|femina'], banL: ['male'], banG: [] },
   { w: 'en:biblical', must: ['βιβλίον|Biblia|βύβλος'], banL: [], banG: [] },
+  { w: 'en:intracrinal', must: ['(s)ker'], banL: [], banG: ['army'] },
+  { w: 'ro:scriitură', must: ['(s)ker|(s)kreyb'], banL: [], banG: ['army'] },
+  { w: 'non:skraba', must: ['(s)ker'], banL: [], banG: ['army'] },
+  { w: 'csb:chôrna', must: ['(s)ker'], banL: [], banG: ['army'] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

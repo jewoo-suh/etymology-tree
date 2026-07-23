@@ -192,6 +192,12 @@ def ety_subs(raw, host_lang):
 
 
 PARENNOTE = re.compile(r"\([^()]*\)")
+# A leading "(s)"-style parenthetical is s-mobile (or a like optional onset),
+# part of the reconstruction's OWN page title: *(s)ker- "to cut, to turn" is a
+# different page from *ker- "army", *(s)pel- from *pel-. Stripping it collapses
+# the citation onto the wrong plain homograph. Keep it when the parens hold a
+# short onset (<=3 chars, no space) sitting directly before the rest of the root.
+SMOBILE = re.compile(r"^\*?\([^)\s]{1,3}\)\S")
 
 
 def clean_term(t):
@@ -202,7 +208,7 @@ def clean_term(t):
         # an enumerated citation (strǣt, strēt) is spelling variants of one
         # stage; the first is the citation
         t = t.split(",")[0].strip()
-    if "(" in t or ")" in t:
+    if ("(" in t or ")" in t) and not SMOBILE.match(t):
         # "(persica) praecocia" keeps its word; "(cut off)" has nothing left
         t = PARENNOTE.sub("", t).strip()
         if "(" in t or ")" in t:
