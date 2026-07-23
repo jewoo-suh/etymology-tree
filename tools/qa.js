@@ -99,6 +99,7 @@ const TESTS = [
   { w: 'en:island', must: ['iegland'], banL: ['isle'], banG: ['insula'] },
   { w: 'en:crayfish', must: ['krabitaz'], banL: [], banG: ['fissure', 'to burst'] },
   { w: 'en:female', must: ['femella|femina'], banL: ['male'], banG: [] },
+  { w: 'en:biblical', must: ['βιβλίον|Biblia|βύβλος'], banL: [], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

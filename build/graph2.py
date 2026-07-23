@@ -393,15 +393,23 @@ def parse_templates(tmpls, own_lang, own_word=""):
                     gh |= tokens(mods["t"])
                 if "id" in mods:
                     ih.add(mods["id"])
-                emit.append((term, gh, ih, bool(mods.get("unc"))))
+                # a mixed-language compound overrides the component language
+                # per part: xanthine is {{af|fr|\u03be\u03b1\u03bd\u03b8\u03cc\u03c2|-ine|lang1=grc}}, the
+                # Greek stem plus a French suffix. Without lang1 the stem is
+                # sought under French, resolves to a phantom, and the Greek
+                # ancestry is lost. langN mirrors the tN / idN per-part pattern.
+                lv = args.get("lang" + str(pos))
+                comp_lang = (lv.strip() if isinstance(lv, str) and lv.strip()
+                             else form_lang)
+                emit.append((term, gh, ih, bool(mods.get("unc")), comp_lang))
             wf2 = defold(own_word)
 
             def fsc(t4):
                 t = defold(t4[0]).strip("-\u2212")
                 return -len(t) if t and t in wf2 else 0
 
-            for term, gh, ih, unc in sorted(emit, key=fsc):
-                out.append(("form", form_lang, term, gh, ih, unc, ()))
+            for term, gh, ih, unc, comp_lang in sorted(emit, key=fsc):
+                out.append(("form", comp_lang, term, gh, ih, unc, ()))
             continue
 
         lg = (args.get("2") or "").strip()
