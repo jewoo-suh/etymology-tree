@@ -91,7 +91,13 @@ MOD = re.compile(r"<([a-z0-9]+):([^<>]*)>")
 TOK = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
 STOP = {"the", "of", "and", "to", "in", "an", "or", "for", "with", "from",
         "by", "on", "at", "as", "is", "was", "be", "form", "plural",
-        "genitive", "singular", "used", "any", "one", "that", "who"}
+        "genitive", "singular", "used", "any", "one", "that", "who",
+        # "alternative/obsolete form of X" boilerplate is register metadata,
+        # not meaning; matching on it made bin- "alternative form of bi-"
+        # bind to bi- "alternative form of bio- (life)" instead of bi- "two",
+        # so binary looked descended from "life".
+        "alternative", "alternate", "spelling", "variant", "misspelling",
+        "obsolete", "archaic", "dialectal", "nonstandard", "eye"}
 
 
 def tokens(s):

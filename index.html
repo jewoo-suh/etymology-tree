@@ -412,8 +412,8 @@
       }).then(function (t) { return JSON.parse(t); });
     });
   }
-  var glossReady = pull("gloss-067c316fb4.json.gz", 16340021, null);  // rides behind
-  pull("graph-core-1b0c970322.json.gz", 17604376, function (got, total) {
+  var glossReady = pull("gloss-caa6a89108.json.gz", 16340537, null);  // rides behind
+  pull("graph-core-c361de78cd.json.gz", 17607820, function (got, total) {
     var pc = total ? Math.min(99, Math.round(got * 100 / total)) : 50;
     document.getElementById("bootbar").style.width = pc + "%";
     document.getElementById("boottxt").textContent =
@@ -2625,19 +2625,36 @@ window.__runapp = function () {
      A server can run this app in memory and, per request, serialise one
      word's computed display to plain JSON -- reusing the exact climb/tree
      logic, no reimplementation. Harmless in the browser (just refs). */
+  var API_FAN = 14, API_BUDGET;
   function apiNode(nd, parent) {
-    var n = nd.n;
-    var o = { id: n.id, w: n.word, c: n.code, lang: n.lang, g: n.gloss || "",
-              recon: isRecon(n.id), kind: n.kind, loan: !!n.loan,
-              path: !!n.path, reach: subtreeCount(nd), hidden: hiddenCount(nd) };
-    if (parent) o.unc = uncertainEdge(parent.n.id, n.id) ? 1 : 0;
-    if (n.others && n.others.length) {
-      o.parts = n.others.map(function (pid) {
+    // buildTree nodes carry their fields directly (id, word, code, ...);
+    // the .n wrapping happens later, only in the layout pass
+    var o = { id: nd.id, w: nd.word, c: nd.code, lang: nd.lang,
+              g: nd.gloss || "", recon: isRecon(nd.id), kind: nd.kind,
+              loan: !!nd.loan, path: !!nd.path, reach: subtreeCount(nd) };
+    if (parent) o.unc = uncertainEdge(parent.id, nd.id) ? 1 : 0;
+    if (nd.others && nd.others.length) {
+      o.parts = nd.others.map(function (pid) {
         return { w: WORDS[pid], c: code(pid), lang: langName(pid),
                  recon: isRecon(pid) };
       });
     }
-    o.children = (nd.children || []).map(function (c) { return apiNode(c, nd); });
+    // send only what the view draws: the on-path children in full, the rest
+    // capped, with a hidden count -- and a global budget so a huge tree stays
+    // a small response (the whole point of the backend).
+    var kids = nd.children || [], shown = kids;
+    if (kids.length > API_FAN) {
+      var onp = [], rest = [];
+      kids.forEach(function (c) { (c.path ? onp : rest).push(c); });
+      shown = onp.concat(rest.slice(0, Math.max(1, API_FAN - onp.length)));
+    }
+    o.hidden = kids.length - shown.length;
+    o.children = [];
+    for (var i = 0; i < shown.length; i++) {
+      if (API_BUDGET <= 0 && !shown[i].path) { o.hidden++; continue; }
+      API_BUDGET--;
+      o.children.push(apiNode(shown[i], nd));
+    }
     return o;
   }
   window.__apiKey = function (key) {
@@ -2654,6 +2671,7 @@ window.__runapp = function () {
   };
   window.__apiTree = function (id) {
     var T = treeFor(id);
+    API_BUDGET = 400;
     return {
       q: id,
       chain: (T.chain || [id]).map(function (x) {
