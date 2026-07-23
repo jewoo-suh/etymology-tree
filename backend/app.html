@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etymology Tree — backend prototype</title>
+<style>
+  :root{color-scheme:light dark;
+    --bg:#ECEFF4;--surface:#FFF;--canvas:#F7F9FB;--line:#D3DBE4;--wire:#A9B8C7;
+    --ink:#131C25;--muted:#58687A;--faint:#8996A5;--accent:#9A6B14;--accent-soft:#F5E7C8;
+    --fam-gem:#3F6E9E;--fam-itc:#9E5241;--fam-grk:#4C7D5A;--fam-cel:#6A5C99;--fam-bsl:#3D7C88;
+    --fam-iir:#8B5F88;--fam-hyx:#7A6B3E;--fam-ana:#5E6B7C;--fam-toc:#916350;--fam-urj:#4E7468;--fam-oth:#6B7885;}
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0C1219;--surface:#151E27;--canvas:#101822;--line:#26323E;--wire:#3B4B5A;
+    --ink:#E4ECF4;--muted:#91A4B6;--faint:#6A7B8C;--accent:#DCAC4C;--accent-soft:#3C3117;
+    --fam-gem:#74A5D4;--fam-itc:#D48875;--fam-grk:#80B48E;--fam-cel:#A092CE;--fam-bsl:#70B2BD;
+    --fam-iir:#C094BD;--fam-hyx:#AFA073;--fam-ana:#93A0B1;--fam-toc:#C69885;--fam-urj:#83A99D;--fam-oth:#9FACB9;}}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:15px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;gap:14px;align-items:center;padding:10px 16px;background:var(--surface);
+    border-bottom:1px solid var(--line);position:relative;z-index:5}
+  .brand{font-weight:700;letter-spacing:.02em;white-space:nowrap}
+  .brand small{color:var(--muted);font-weight:400;font-size:12px;margin-left:6px}
+  .search{position:relative;flex:0 0 340px;max-width:46vw}
+  .search input{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:8px;
+    background:var(--canvas);color:var(--ink);font-size:15px}
+  .search input:focus{outline:none;border-color:var(--accent)}
+  .results{position:absolute;top:110%;left:0;right:0;background:var(--surface);
+    border:1px solid var(--line);border-radius:8px;max-height:60vh;overflow:auto;
+    box-shadow:0 8px 24px rgba(0,0,0,.18)}
+  .results:empty{display:none}
+  .res{display:flex;gap:8px;align-items:baseline;padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--line)}
+  .res:last-child{border-bottom:0}
+  .res:hover,.res.cur{background:var(--accent-soft)}
+  .res .w{font-weight:600}.res .w.recon{font-style:italic}
+  .res .lg{color:var(--muted);font-size:12px}
+  .res .g{color:var(--faint);font-size:12px;margin-left:auto;max-width:45%;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .meta{margin-left:auto;color:var(--faint);font-size:12px;white-space:nowrap}
+  .chainbar{padding:8px 16px;display:flex;flex-wrap:wrap;gap:4px 2px;align-items:center;
+    background:var(--canvas);border-bottom:1px solid var(--line);font-size:14px}
+  .step{border:1px solid transparent;border-radius:6px;padding:2px 7px;cursor:pointer;color:var(--ink)}
+  .step:hover{border-color:var(--accent);color:var(--accent)}
+  .step.recon{font-style:italic}
+  .step.you{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .step.root{font-weight:600}
+  .arrow{color:var(--faint);padding:0 1px}
+  .canvas{position:absolute;inset:0;overflow:auto}
+  .stagewrap{position:relative;flex:1;min-height:0}
+  svg{display:block;font:13px ui-sans-serif,system-ui,sans-serif}
+  .link{fill:none;stroke:var(--wire);stroke-width:1.4}
+  .link.on{stroke-width:2.4;stroke-opacity:1}
+  .link.k1{stroke-dasharray:4 3.5}.link.k2{stroke-dasharray:1 4}.link.k3{stroke-dasharray:9 4}
+  .dot{stroke:var(--canvas);stroke-width:1.5}
+  .lbl{fill:var(--ink);dominant-baseline:middle;cursor:pointer}
+  .lbl.recon{font-style:italic}
+  .lbl.you{font-weight:700}
+  .lbl:hover{fill:var(--accent)}
+  .who{fill:var(--faint);font-size:11px}
+  .more{fill:var(--faint);font-size:11px}
+  .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--faint);flex-direction:column;gap:8px;text-align:center;padding:0 20px}
+  .badge{font-size:11px;color:var(--faint)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Etymology Tree <small>backend prototype</small></div>
+  <div class="search">
+    <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Search a word in any language…">
+    <div class="results" id="results"></div>
+  </div>
+  <div class="meta" id="meta"></div>
+</header>
+<div class="chainbar" id="chainbar"></div>
+<div class="stagewrap"><div class="canvas" id="canvas"><svg id="svg"></svg></div>
+  <div class="empty" id="empty">Search a word to see its etymology tree.<div class="badge">served per-word from the backend</div></div>
+</div>
+<script src="/d3.js"></script>
+<script>
+"use strict";
+var FAMVAR={"gem-pro":"gem","gmw-pro":"gem","gmq-pro":"gem","itc-pro":"itc","grk-pro":"grk",
+ "cel-pro":"cel","cel-bry-pro":"cel","sla-pro":"bsl","ine-bsl-pro":"bsl","bat-pro":"bsl",
+ "iir-pro":"iir","inc-pro":"iir","ira-pro":"iir","hyx-pro":"hyx","ine-ana-pro":"ana",
+ "ine-toc-pro":"toc","urj-pro":"urj","urj-fin-pro":"urj","smi-pro":"urj"};
+function fam(c){return FAMVAR[c]||"oth";}
+function famColour(c){return "var(--fam-"+fam(c)+")";}
+var qEl=document.getElementById("q"), resBox=document.getElementById("results"),
+    chainbar=document.getElementById("chainbar"), svg=document.getElementById("svg"),
+    canvas=document.getElementById("canvas"), empty=document.getElementById("empty"),
+    metaEl=document.getElementById("meta");
+var SVGNS="http://www.w3.org/2000/svg";
+function el(t,a){var e=document.createElementNS(SVGNS,t);for(var k in a)e.setAttribute(k,a[k]);return e;}
+
+/* ---- search ---- */
+var hits=[], cur=-1, seq=0;
+qEl.addEventListener("input", function(){
+  var tok=++seq, v=qEl.value.trim();
+  if(!v){resBox.textContent="";hits=[];return;}
+  fetch("/api/search?q="+encodeURIComponent(v)).then(function(r){return r.json();}).then(function(list){
+    if(tok!==seq)return; hits=list; cur=list.length?0:-1; paint();
+  });
+});
+qEl.addEventListener("keydown", function(e){
+  if(e.key==="ArrowDown"){cur=Math.min(cur+1,hits.length-1);paint();e.preventDefault();}
+  else if(e.key==="ArrowUp"){cur=Math.max(cur-1,0);paint();e.preventDefault();}
+  else if(e.key==="Enter"&&hits[cur]){openId(hits[cur].id);resBox.textContent="";qEl.blur();}
+  else if(e.key==="Escape"){resBox.textContent="";qEl.blur();}
+});
+document.addEventListener("click",function(e){if(!e.target.closest(".search"))resBox.textContent="";});
+function paint(){
+  resBox.textContent="";
+  hits.forEach(function(h,i){
+    var b=document.createElement("div"); b.className="res"+(i===cur?" cur":"");
+    var sw=document.createElement("span");
+    sw.style.cssText="width:.55rem;height:.55rem;border-radius:2px;flex:none;align-self:center;background:"+famColour(h.c);
+    b.appendChild(sw);
+    var w=document.createElement("span"); w.className="w"+(h.recon?" recon":""); w.textContent=(h.recon?"*":"")+h.w; b.appendChild(w);
+    var lg=document.createElement("span"); lg.className="lg"; lg.textContent=h.lang; b.appendChild(lg);
+    if(h.g){var g=document.createElement("span"); g.className="g"; g.textContent=h.g; b.appendChild(g);}
+    b.addEventListener("click",function(){openId(h.id);resBox.textContent="";qEl.blur();});
+    resBox.appendChild(b);
+  });
+}
+
+/* ---- open a word ---- */
+var openSeq=0;
+function openId(id){
+  var tok=++openSeq, t0=performance.now();
+  metaEl.textContent="loading…";
+  fetch("/api/tree?id="+id).then(function(r){return r.json();}).then(function(data){
+    if(tok!==openSeq)return;
+    empty.style.display="none";
+    drawChain(data); drawTree(data);
+    metaEl.textContent=Math.round(performance.now()-t0)+" ms";
+  }).catch(function(e){metaEl.textContent="error";});
+}
+function stepLabel(s){return (s.recon?"*":"")+s.w;}
+function drawChain(data){
+  chainbar.textContent="";
+  data.chain.forEach(function(s,i){
+    if(i){var a=document.createElement("span");a.className="arrow";a.textContent="→";chainbar.appendChild(a);}
+    var b=document.createElement("span");
+    b.className="step"+(i===0?" root":"")+(s.id===data.q?" you":"")+(s.recon?" recon":"");
+    b.textContent=stepLabel(s); b.title=s.lang;
+    b.addEventListener("click",function(){openId(s.id);});
+    chainbar.appendChild(b);
+  });
+}
+
+/* ---- tree ---- */
+var ROW=22, COL=210;
+function drawTree(data){
+  while(svg.firstChild)svg.removeChild(svg.firstChild);
+  var root=d3.hierarchy(data.tree,function(d){return d.children;});
+  d3.tree().nodeSize([ROW,COL])(root);
+  var nodes=root.descendants(), links=root.links();
+  var minx=Infinity,maxx=-Infinity,maxy=0;
+  nodes.forEach(function(n){minx=Math.min(minx,n.x);maxx=Math.max(maxx,n.x);maxy=Math.max(maxy,n.y);});
+  var padX=180, padY=30;
+  var W=maxy+padX+40, H=(maxx-minx)+padY*2;
+  svg.setAttribute("width",W); svg.setAttribute("height",H);
+  var ox=padY-minx;                       // shift so top node visible
+  function px(n){return n.y+30;} function py(n){return n.x+ox;}
+  var gL=el("g",{});
+  links.forEach(function(lk){
+    var s=lk.source,t=lk.target, k=t.data.kind, on=s.data.path&&t.data.path;
+    var x1=px(s)+Math.min(estW(s.data),COL-40), y1=py(s), x2=px(t), y2=py(t);
+    var mx=(x1+x2)/2;
+    gL.appendChild(el("path",{"class":"link"+(on?" on":"")+" k"+k,
+      stroke:famColour(t.data.c), d:"M"+x1+","+y1+"C"+mx+","+y1+" "+mx+","+y2+" "+x2+","+y2}));
+  });
+  svg.appendChild(gL);
+  var gN=el("g",{});
+  nodes.forEach(function(n){
+    var d=n.data, x=px(n), y=py(n);
+    gN.appendChild(el("circle",{"class":"dot",cx:x,cy:y,r:d.path?4:3,fill:famColour(d.c)}));
+    var tx=el("text",{"class":"lbl"+(d.recon?" recon":"")+(d.id===data.q?" you":""),x:x+8,y:y});
+    tx.textContent=(d.recon?"*":"")+d.w;
+    if(d.g)tx.appendChild(mkTitle(d.g));
+    tx.addEventListener("click",function(){openId(d.id);});
+    gN.appendChild(tx);
+    var lw=estW(d);
+    var langx=x+8+lw+6;
+    var lt=el("text",{"class":"who",x:langx,y:y}); lt.textContent=d.lang;
+    gN.appendChild(lt);
+    if(d.hidden>0){
+      var mt=el("text",{"class":"more",x:langx+estText(d.lang)+8,y:y}); mt.textContent="+"+d.hidden;
+      gN.appendChild(mt);
+    }
+  });
+  svg.appendChild(gN);
+  // scroll so the query is in view
+  var q=nodes.filter(function(n){return n.data.id===data.q;})[0]||root;
+  canvas.scrollLeft=Math.max(0,px(q)-canvas.clientWidth*0.55);
+  canvas.scrollTop=Math.max(0,py(q)-canvas.clientHeight*0.5);
+}
+function estText(s){return (s||"").length*7;}
+function estW(d){return ((d.recon?1:0)+(d.w||"").length)*8.2+6;}
+function mkTitle(t){var e=document.createElementNS(SVGNS,"title");e.textContent=t;return e;}
+
+qEl.focus();
+</script>
+</body>
+</html>

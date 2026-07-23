@@ -2621,6 +2621,54 @@ window.__runapp = function () {
       return step();
     } };
 
+  /* ---- JSON API surface (for the optional backend server) ----------------
+     A server can run this app in memory and, per request, serialise one
+     word's computed display to plain JSON -- reusing the exact climb/tree
+     logic, no reimplementation. Harmless in the browser (just refs). */
+  function apiNode(nd, parent) {
+    var n = nd.n;
+    var o = { id: n.id, w: n.word, c: n.code, lang: n.lang, g: n.gloss || "",
+              recon: isRecon(n.id), kind: n.kind, loan: !!n.loan,
+              path: !!n.path, reach: subtreeCount(nd), hidden: hiddenCount(nd) };
+    if (parent) o.unc = uncertainEdge(parent.n.id, n.id) ? 1 : 0;
+    if (n.others && n.others.length) {
+      o.parts = n.others.map(function (pid) {
+        return { w: WORDS[pid], c: code(pid), lang: langName(pid),
+                 recon: isRecon(pid) };
+      });
+    }
+    o.children = (nd.children || []).map(function (c) { return apiNode(c, nd); });
+    return o;
+  }
+  window.__apiKey = function (key) {
+    if (KEYIDX[key] !== undefined) return KEYIDX[key];
+    var h = search(key);
+    return h.length ? h[0] : -1;
+  };
+  window.__apiSearch = function (q) {
+    return search(q).slice(0, 30).map(function (id) {
+      return { id: id, key: code(id) + ":" + WORDS[id], w: WORDS[id],
+               c: code(id), lang: langName(id), g: GLOSS[id] || "",
+               recon: isRecon(id), deg: kids(id).length };
+    });
+  };
+  window.__apiTree = function (id) {
+    var T = treeFor(id);
+    return {
+      q: id,
+      chain: (T.chain || [id]).map(function (x) {
+        return { id: x, w: WORDS[x], c: code(x), lang: langName(x),
+                 recon: isRecon(x) };
+      }),
+      tree: apiNode(T.tree, null),
+      formation: T.formation ? T.formation.map(function (comp) {
+        return comp.map(function (x) {
+          return { w: WORDS[x], c: code(x), recon: isRecon(x) };
+        });
+      }) : null
+    };
+  };
+
   open(KEYIDX["en:father"] !== undefined ? KEYIDX["en:father"] : 0);
 };
 (function () {

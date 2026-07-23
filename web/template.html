@@ -2549,6 +2549,72 @@ window.__runapp = function () {
       return step();
     } };
 
+  /* ---- JSON API surface (for the optional backend server) ----------------
+     A server can run this app in memory and, per request, serialise one
+     word's computed display to plain JSON -- reusing the exact climb/tree
+     logic, no reimplementation. Harmless in the browser (just refs). */
+  var API_FAN = 14, API_BUDGET;
+  function apiNode(nd, parent) {
+    // buildTree nodes carry their fields directly (id, word, code, ...);
+    // the .n wrapping happens later, only in the layout pass
+    var o = { id: nd.id, w: nd.word, c: nd.code, lang: nd.lang,
+              g: nd.gloss || "", recon: isRecon(nd.id), kind: nd.kind,
+              loan: !!nd.loan, path: !!nd.path, reach: subtreeCount(nd) };
+    if (parent) o.unc = uncertainEdge(parent.id, nd.id) ? 1 : 0;
+    if (nd.others && nd.others.length) {
+      o.parts = nd.others.map(function (pid) {
+        return { w: WORDS[pid], c: code(pid), lang: langName(pid),
+                 recon: isRecon(pid) };
+      });
+    }
+    // send only what the view draws: the on-path children in full, the rest
+    // capped, with a hidden count -- and a global budget so a huge tree stays
+    // a small response (the whole point of the backend).
+    var kids = nd.children || [], shown = kids;
+    if (kids.length > API_FAN) {
+      var onp = [], rest = [];
+      kids.forEach(function (c) { (c.path ? onp : rest).push(c); });
+      shown = onp.concat(rest.slice(0, Math.max(1, API_FAN - onp.length)));
+    }
+    o.hidden = kids.length - shown.length;
+    o.children = [];
+    for (var i = 0; i < shown.length; i++) {
+      if (API_BUDGET <= 0 && !shown[i].path) { o.hidden++; continue; }
+      API_BUDGET--;
+      o.children.push(apiNode(shown[i], nd));
+    }
+    return o;
+  }
+  window.__apiKey = function (key) {
+    if (KEYIDX[key] !== undefined) return KEYIDX[key];
+    var h = search(key);
+    return h.length ? h[0] : -1;
+  };
+  window.__apiSearch = function (q) {
+    return search(q).slice(0, 30).map(function (id) {
+      return { id: id, key: code(id) + ":" + WORDS[id], w: WORDS[id],
+               c: code(id), lang: langName(id), g: GLOSS[id] || "",
+               recon: isRecon(id), deg: kids(id).length };
+    });
+  };
+  window.__apiTree = function (id) {
+    var T = treeFor(id);
+    API_BUDGET = 400;
+    return {
+      q: id,
+      chain: (T.chain || [id]).map(function (x) {
+        return { id: x, w: WORDS[x], c: code(x), lang: langName(x),
+                 recon: isRecon(x) };
+      }),
+      tree: apiNode(T.tree, null),
+      formation: T.formation ? T.formation.map(function (comp) {
+        return comp.map(function (x) {
+          return { w: WORDS[x], c: code(x), recon: isRecon(x) };
+        });
+      }) : null
+    };
+  };
+
   open(KEYIDX["en:father"] !== undefined ? KEYIDX["en:father"] : 0);
 };
 (function () {
