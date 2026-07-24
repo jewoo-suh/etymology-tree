@@ -220,8 +220,17 @@ def main():
     # English robot, piano and notebook, because English has far more to say.
     # Scale by the square root of what a language actually has, so big languages
     # get more without the largest taking everything.
+    # English is the site's primary search language, so ship it whole rather
+    # than degree-ranked: otherwise low-connectivity but perfectly common words
+    # (sirloin, helpmate, titmouse) fall below the cutoff and read as missing.
+    # Every other language keeps the sqrt quota, so breadth is untouched and
+    # English merely fills more of the budget it was already the biggest user of.
+    FULL_LANGS = {"en"}
+
     def quota_for(c, m):
         n = len(ranked[c])
+        if c in FULL_LANGS:
+            return n
         return min(n, max(LEAF_FLOOR, int(m * (n ** 0.5))))
 
     def pack(m):
