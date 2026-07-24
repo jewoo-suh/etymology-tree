@@ -291,7 +291,7 @@ def parse_templates(tmpls, own_lang, own_word=""):
                     "cal": "cal", "calq": "cal", "calque": "cal",
                     "lbor": "bor", "psm": "cal", "sl": "cal", "from": "der"}
             groups = []
-            cur_rel, cur_terms = "der", []
+            cur_rel, cur_terms, cur_orig = "der", [], "der"
             gi = 2
             while gi <= 12:
                 raw = args.get(str(gi))
@@ -300,18 +300,25 @@ def parse_templates(tmpls, own_lang, own_word=""):
                     break
                 if raw.startswith(":"):
                     if cur_terms and cur_rel:
-                        groups.append((cur_rel, cur_terms))
+                        groups.append((cur_rel, cur_terms, cur_orig))
                     # an unrecognised relation (:influence, :cognate...) is
                     # not ancestry; its terms must not become parents
-                    cur_rel = RELS.get(raw.split("<")[0].strip().lstrip(":"))
+                    cur_orig = raw.split("<")[0].strip().lstrip(":")
+                    cur_rel = RELS.get(cur_orig)
                     cur_terms = []
                     continue
                 if raw.strip() and cur_rel:
                     cur_terms.append(raw)
             if cur_terms and cur_rel:
-                groups.append((cur_rel, cur_terms))
+                groups.append((cur_rel, cur_terms, cur_orig))
             def gpri(g):
-                grel2, terms2 = g
+                grel2, terms2, orig2 = g
+                # a semantic loan (:sl) borrows MEANING onto a natively-formed
+                # word, not descent: musculus is Latin mūs + -culus and merely
+                # takes its "muscle" sense from Greek μῦς. It must not outrank
+                # the actual word-formation as the page-walk parent.
+                if orig2 == "sl":
+                    return 4
                 unc0 = bool(split_mods(terms2[0])[1].get("unc"))
                 if grel2 != "form" and not unc0:
                     return 0
@@ -324,7 +331,7 @@ def parse_templates(tmpls, own_lang, own_word=""):
                 t = defold(clean_term(split_mods(raw)[0])).strip("-\u2212")
                 return -len(t) if t and t in wf else 0
 
-            for grel, terms in groups:
+            for grel, terms, _orig in groups:
                 # Which part is the thread of a compound? The one the word
                 # carries: melarancia continues through arancia (the orange),
                 # not mela (the apple); teacher through teach, not -er.

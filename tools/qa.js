@@ -104,6 +104,7 @@ const TESTS = [
   { w: 'ro:scriitură', must: ['(s)ker|(s)kreyb'], banL: [], banG: ['army'] },
   { w: 'non:skraba', must: ['(s)ker'], banL: [], banG: ['army'] },
   { w: 'csb:chôrna', must: ['(s)ker'], banL: [], banG: ['army'] },
+  { w: 'en:muscle', must: ['musculus|mūs'], banL: ['μῦς'], banG: [] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------

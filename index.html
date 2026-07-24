@@ -412,8 +412,8 @@
       }).then(function (t) { return JSON.parse(t); });
     });
   }
-  var glossReady = pull("gloss-a1e3762b3f.json.gz", 15213666, null);  // rides behind
-  pull("graph-core-b99493080c.json.gz", 16504151, function (got, total) {
+  var glossReady = pull("gloss-925174b24c.json.gz", 15213718, null);  // rides behind
+  pull("graph-core-b4d467eb87.json.gz", 16504260, function (got, total) {
     var pc = total ? Math.min(99, Math.round(got * 100 / total)) : 50;
     document.getElementById("bootbar").style.width = pc + "%";
     document.getElementById("boottxt").textContent =
