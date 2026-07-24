@@ -192,12 +192,16 @@ def ety_subs(raw, host_lang):
 
 
 PARENNOTE = re.compile(r"\([^()]*\)")
-# A leading "(s)"-style parenthetical is s-mobile (or a like optional onset),
-# part of the reconstruction's OWN page title: *(s)ker- "to cut, to turn" is a
-# different page from *ker- "army", *(s)pel- from *pel-. Stripping it collapses
-# the citation onto the wrong plain homograph. Keep it when the parens hold a
-# short onset (<=3 chars, no space) sitting directly before the rest of the root.
-SMOBILE = re.compile(r"^\*?\([^)\s]{1,3}\)\S")
+# A short parenthetical embedded in a reconstruction is an optional phoneme that
+# belongs to the page title, not an annotation to drop: *(s)ker- "to cut" and
+# *dʰeh₁(y)- "to suckle" and *ḱerh₂(s)weyk-s are their own pages, distinct from
+# *ker- "army" and *dʰeh₁- "to do". Keep the term whole when EVERY paren in it
+# is a short (<=3-char), space-free group AND the form looks like a reconstruction
+# or affix (a dash, a subscript, or an aspiration mark) -- so plain "word(s)"
+# still strips to "word".
+OPTPAR = re.compile(r"\([^)\s]{1,3}\)")
+SPACEPAR = re.compile(r"\s\(|\)\s|\(\s|\s\)")
+RECONISH = re.compile(r"[-−₀-₉ʰʷʲˀ]")
 
 
 def clean_term(t):
@@ -208,11 +212,14 @@ def clean_term(t):
         # an enumerated citation (strǣt, strēt) is spelling variants of one
         # stage; the first is the citation
         t = t.split(",")[0].strip()
-    if ("(" in t or ")" in t) and not SMOBILE.match(t):
-        # "(persica) praecocia" keeps its word; "(cut off)" has nothing left
-        t = PARENNOTE.sub("", t).strip()
-        if "(" in t or ")" in t:
-            return ""
+    if "(" in t or ")" in t:
+        bare = OPTPAR.sub("", t)
+        embedded = "(" not in bare and ")" not in bare and not SPACEPAR.search(t)
+        if not (embedded and RECONISH.search(t)):
+            # "(persica) praecocia" keeps its word; "(cut off)" has nothing left
+            t = PARENNOTE.sub("", t).strip()
+            if "(" in t or ")" in t:
+                return ""
     t = t.lstrip("*").strip()
     if t in ("", "-", "--", "?"):
         return ""

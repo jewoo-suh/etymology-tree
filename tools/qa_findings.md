@@ -14,19 +14,25 @@ Fix: preserve a leading `(C)` onset (it is part of the reconstruction's page tit
 - non:skraba      `*(s)ker-` "to cut" -> *skrappōną (was "army")
 - csb:chôrna      `*(s)ker-` "to cut" -> *xorna "food" (was "army"; from earlier round)
 
-## Remaining confirmed defects (21) — for a future targeted pass
+## Also fixed (2026-07-24, medial optional-phoneme parens)
 
-### A. id / gloss-hint homograph mis-pick (source carries a disambiguator we ignore)
-The source names a specific sense via `<id:...>` or a gloss the target sense expresses
-with a synonym, so neither the senseid map nor gloss-overlap catches it.
-- grk-mar:пра́ма   *per- should be `<id:fare>` "to cross/traverse", not "to beat"
-- cy:dyniawed      root should be *dʰeh₁(y)- "to suckle", not *dʰeh₁- "to do"
-- scn:gaḍḍina      *gelH- should use `id:head`, shown as "naked"
-- nb:fåtallig      Old Norse tal should use `id:number`, shown as "speech, parley"
-- frm:cevich       cervix should root in *ḱerh₂- "head", shown as *weyk- "to sift"
-- hy:բաժակաճառ     root should be *bʰag- "to share/apportion", not *bʰegʷ- "to flee"
-- kk:жаттау        فا:یاد deeper origin is *yeh₂- "to go", not *h₂m̥bʰí "around"
-- fi:arabiantiira  parent should be toponym Arabia, shown as "Arabic (language)"
+clean_term stripped a MEDIAL `(y)`/`(s)` too, collapsing *dʰeh₁(y)- "to suckle" onto
+*dʰeh₁- "to do". Generalised the s-mobile keep to any short, space-free, embedded paren
+in a reconstruction (so "word(s)" and CJK "词(儿)" still strip).
+- cy:dyniawed      now roots in *dʰeh₁(y)- "to suckle" (was *dʰeh₁- "to do")
+
+## Remaining confirmed defects (20) — for a future targeted pass
+
+### A. id / gloss-hint homograph mis-pick — INVESTIGATED, mostly NOT cleanly fixable
+The resolver already honours senseids and id-hint gloss tokens, so these are data /
+synonym / ambiguity limits, not a single resolver bug:
+- grk-mar:пра́ма   id `fare` does not match the target senseid `go forth` (synonym label, no lexical overlap)
+- scn:gaḍḍina      source has NO id:head; *gelH- "naked" is Wiktionary's own uncertain derivation (over-flagged)
+- nb:fåtallig      non:tal has ONLY the "talk, parley" sense in our data; the "number" sense is absent (data gap)
+- frm:cevich       routes to *weyk- via the itc-pro *ker-weiks path, not the *ḱerh₂(s)weyk-s compound; needs compound-element selection
+- hy:բաժակաճառ     citing template is a bare `uder` to Middle Iranian with no term; the *bʰegʷ- root is a merged node (no id to honour)
+- kk:жаттау        competing roots: source lists BOTH inh *Habí (<- *h₂m̥bʰí) and der *yeh₂-; genuinely ambiguous
+- fi:arabiantiira  capitalization homograph: cited lowercase "arabia" (language) vs the toponym page Arabia
 
 ### B. wrong-sense same-spelling landing
 - af:kus           via fro:cost "financial cost"; should be OF coste <- costa "rib, side"

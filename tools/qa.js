@@ -105,6 +105,7 @@ const TESTS = [
   { w: 'non:skraba', must: ['(s)ker'], banL: [], banG: ['army'] },
   { w: 'csb:chôrna', must: ['(s)ker'], banL: [], banG: ['army'] },
   { w: 'en:muscle', must: ['musculus|mūs'], banL: ['μῦς'], banG: [] },
+  { w: 'cy:dyniawed', must: ['dʰeh₁(y)'], banL: [], banG: ['to do'] },
 ];
 
 // ---- decode (mirrors the page exactly) -------------------------------------
